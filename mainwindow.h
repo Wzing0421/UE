@@ -39,6 +39,7 @@ public:
     unsigned char regMsg[21];//第一次注册所用的注册信息
     unsigned char regMsg_au[23];//第二次鉴权注册用的注册信息
 
+
     QString getlocalIP();//获得本机本地IP
 
     void init_regMsg();//用于第一次初始化注册信息
