@@ -76,10 +76,8 @@ void MainWindow::recvRegInfo(){
         if(judge == 0x02 && registerstate == 0){//说明是authorization command
             qDebug()<<"收到authorization command！";
             registerstate = 1;
-
             //再次发送带有鉴权的注册消息
             timer->start(5000);
-
             int num=sendSocket->writeDatagram((char*)regMsg_au,sizeof(regMsg_au),PCCaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"发送带有鉴权的注册消息，长度为 "<<num<<" 字节";
         }
