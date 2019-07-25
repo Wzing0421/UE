@@ -221,6 +221,7 @@ void MainWindow::init_IMSI(QString &QIMSIstr){//这个函数实现大端存储
     //IMSI最低位对应的是regMsg[9],最高为对应的是regMsg[16],一个字节存放两位数字
     //注意我在IMSI最高位补了一个0变成16位,这是为了代码整洁性，但是最高位是0不会影响结果
     //对于一个char里面的两个数字，同样一个char里面低位存放低位数字。高4位存放高位数字
+
     std::string IMSIstr = '0' + QIMSIstr.toStdString();
     //printf(IMSIstr.c_str());
     unsigned char IMSI[8];
