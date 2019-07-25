@@ -27,6 +27,19 @@
      <string>开机注册</string>
     </property>
    </widget>
+   <widget class="QPushButton" name="DeReigster">
+    <property name="geometry">
+     <rect>
+      <x>309</x>
+      <y>240</y>
+      <width>91</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>注销</string>
+    </property>
+   </widget>
   </widget>
   <widget class="QMenuBar" name="menuBar">
    <property name="geometry">
@@ -34,7 +47,7 @@
      <x>0</x>
      <y>0</y>
      <width>409</width>
-     <height>26</height>
+     <height>24</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuUE">
