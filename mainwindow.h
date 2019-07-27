@@ -55,14 +55,34 @@ public:
     quint32 getlocalIP();//获得本机本地IP
 
     void init_regMsg();//用于第一次初始化注册信息
-
     void init_IMSI(QString &IMSIstr);//初始化8字节的IMSI信息
-
     void init_voiceDeRegisterRsp();
-
     void init_voiceDeRegisterReq();
-
     void init_sc2();//初始化sc2的头
+
+
+    /*呼叫状态机的状态*/
+    enum CALL_STATE{
+       U0,U1,U2,U3,U4,U5,U6,U7,U8,U9,U10,U19
+    };
+    CALL_STATE callstate;
+    /*呼叫状态的变量*/
+    unsigned char callSetup[21];
+    unsigned char callSetupAck[7];
+    unsigned char callAllerting[7];
+    unsigned char callConnect[8];
+    unsigned char callConnectAck[8];
+    unsigned char callDisconnect[7];
+    unsigned char callReleaseRsp[8];
+    /*以下是呼叫过程的初始化*/
+    void init_callSetup();
+    void init_callSetupAck();
+    void init_callAlerting();
+    void init_callConnect();
+    void init_callConnectAck();
+    void init_callDisconnect(int cause);
+    void init_callReleaseRsp(int cause);
+
 
 private slots:
 
@@ -73,6 +93,9 @@ private slots:
     void proc_timeout();//注册时候的超时处理，设置T9001=5s
 
     void on_DeReigster_clicked();
+
+    void on_call_clicked();
+
 
 private:
     Ui::MainWindow *ui;

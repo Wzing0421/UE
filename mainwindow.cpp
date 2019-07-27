@@ -23,11 +23,23 @@ MainWindow::MainWindow(QWidget *parent) :
     localip = getlocalIP();//获得本机的IP
     qDebug()<<localip;
 
+    /*初始化注册信令*/
     init_regMsg();//初始化第一个注册信息
-
     init_voiceDeRegisterRsp();//初始化 DeRegister Rsp
     init_voiceDeRegisterReq();//初始化 DeRegister Req
+
     init_sc2();//初始化sc2头
+
+    /*初始化呼叫信令*/
+    init_callSetup();
+    init_callSetupAck();
+    init_callAlerting();
+    init_callConnect();
+    init_callConnectAck();
+    int cause = 27;
+    init_callDisconnect(cause);//UE正常呼叫释放
+    init_callReleaseRsp(cause);
+
 
     regUdpSocket = new QUdpSocket(this);
     sendSocket = new QUdpSocket(this);
@@ -140,6 +152,7 @@ quint32 MainWindow::getlocalIP(){
     }
 }
 
+/*以下都是初始化信令部分*/
 void MainWindow::init_regMsg(){
 
         unsigned char protocolVersion = 0x00;
@@ -217,23 +230,23 @@ void MainWindow::init_IMSI(QString &QIMSIstr){//这个函数实现大端存储
         box.exec();
         return;
     }
-    //"0460001357924680"最高位补了一个0
+    //"460001357924680F"最高位补了一个F(1111)
     //IMSI最低位对应的是regMsg[9],最高为对应的是regMsg[16],一个字节存放两位数字
     //注意我在IMSI最高位补了一个0变成16位,这是为了代码整洁性，但是最高位是0不会影响结果
     //对于一个char里面的两个数字，同样一个char里面低位存放低位数字。高4位存放高位数字
 
-    std::string IMSIstr = '0' + QIMSIstr.toStdString();
+    std::string IMSIstr = QIMSIstr.toStdString() + '?';
     //printf(IMSIstr.c_str());
     unsigned char IMSI[8];
     memset(IMSI,0,8);
     for(int i=0;i<=7;i++){//注意大端
-        int index1 = 2*i; //低位数字
+        int index1 = 2*i; //低位数字存在一个字节里面的低4位
         int index2 = 2*i+1;	//高位数字
         int num1 = int(IMSIstr[index1]- '0');
         unsigned char num1c = num1;
-        IMSI[i] = IMSI[i] | (num1c<<4);
+        IMSI[i] = IMSI[i] | num1c;
         int num2 = int(IMSIstr[index2] -'0');
-        unsigned char num2c = num2;
+        unsigned char num2c = (num2<<4);
         IMSI[i] = IMSI[i] | num2c;
     }
     memcpy(regMsg+9,IMSI,8);
@@ -269,6 +282,88 @@ void MainWindow::init_sc2(){
     SC2_header[5] = 0x00;//信令方向00为上行
 }
 
+void MainWindow::init_callSetup(){
+    callSetup[0] = 0x00;//Protocol version
+    callSetup[1] = 0x15;//Message length
+    callSetup[2] = 0x06;//Message type
+    //call ID 4个字节填全F
+    memset(callSetup+3, 255,4);
+    //STMSI
+    memset(callSetup+7,0,5);
+    //call type
+    callSetup[12] = 0x01;
+    //init called Party BCD Number
+    callSetup[13] = 0x03;// tag
+    callSetup[14] = 0x08;// length of called BCD number
+
+    /*电话号码*/
+    string telnum = "15650709603";
+    telnum += '?';//为了最后可以补一个1111
+    unsigned char nums[6];
+    memset(nums,0,6);
+    for(int i=0;i<=5;i++){//注意大端
+        int index1 = 2*i; //低位数字存在一个字节里面的低4位
+        int index2 = 2*i+1;	//高位数字
+        int num1 = int(telnum[index1]- '0');
+        unsigned char num1c = num1;
+        nums[i] = nums[i] | num1c;
+        int num2 = int(telnum[index2] -'0');
+        unsigned char num2c = (num2<<4);
+        nums[i] = nums[i] | num2c;
+    }
+    memcpy(callSetup+15,nums,6);
+}
+
+void MainWindow::init_callSetupAck(){
+    callSetupAck[0] = 0x00;//protocol version
+    callSetupAck[1] = 0x07;//message length
+    callSetupAck[2] = 0x07;//message type
+    //后面的需要memcpy以下从PCC发送来的call ID
+}
+
+void MainWindow::init_callAlerting(){
+    callAllerting[0] = 0x00;//protocol version
+    callAllerting[1] = 0x07;//message length
+    callAllerting[2] = 0x08;//message type
+    //后面的需要memcpy以下从PCC发送来的call ID
+}
+
+void MainWindow::init_callConnect(){
+    callConnect[0] = 0x00;//protocol version
+    callConnect[1] = 0x08;//message length
+    callConnect[2] = 0x09;//message type
+    //后面的需要memcpy以下从PCC发送来的call ID
+    callConnect[7] = 0x01;//call type
+}
+
+void MainWindow::init_callConnectAck(){
+    callConnectAck[0] = 0x00;//protocol version
+    callConnectAck[1] = 0x07;//message length
+    callConnectAck[2] = 0x0a;//message type
+    //后面的需要memcpy以下从PCC发送来的call ID
+}
+
+void MainWindow::init_callDisconnect(int cause){
+
+    callDisconnect[0] = 0x00;//protocol version
+    callDisconnect[1] = 0x07;//message length
+    callDisconnect[2] = 0x0a;//message type
+    //后面的需要memcpy以下从PCC发送来的call ID
+
+    callDisconnect[8] = char(cause);//casue
+
+}
+
+void MainWindow::init_callReleaseRsp(int cause){
+
+    callReleaseRsp[0] = 0x00;//protocol version
+    callReleaseRsp[1] = 0x08;//message length
+    callReleaseRsp[2] = 0x0d;//message type
+    //后面的需要memcpy以下从PCC发送来的call ID
+
+    callReleaseRsp[8] = char(cause);//casue
+}
+/*上面都是初始化信令*/
 void MainWindow::proc_timeout(){
 
     timer->stop();
@@ -331,4 +426,15 @@ void MainWindow::on_DeReigster_clicked()
     int num=sendSocket->writeDatagram((char*)sc2_voiceDeRegisterReq,sizeof(sc2_voiceDeRegisterReq),PCCaddr,regsendPort);//num返回成功发送的字节数量
     //sendSocket->waitForReadyRead();
     qDebug()<<"UE请求注销,长度: "<<num;
+}
+
+
+void MainWindow::on_call_clicked()//呼叫按钮
+{
+    if(registerstate != REGISTERED){
+        qDebug()<<"请先注册！";
+        return;
+    }
+
+
 }

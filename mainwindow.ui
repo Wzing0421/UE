@@ -17,8 +17,8 @@
    <widget class="QPushButton" name="start">
     <property name="geometry">
      <rect>
-      <x>312</x>
-      <y>80</y>
+      <x>110</x>
+      <y>130</y>
       <width>91</width>
       <height>111</height>
      </rect>
@@ -30,14 +30,27 @@
    <widget class="QPushButton" name="DeReigster">
     <property name="geometry">
      <rect>
-      <x>309</x>
-      <y>240</y>
+      <x>220</x>
+      <y>130</y>
       <width>91</width>
-      <height>51</height>
+      <height>111</height>
      </rect>
     </property>
     <property name="text">
      <string>注销</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="call">
+    <property name="geometry">
+     <rect>
+      <x>110</x>
+      <y>330</y>
+      <width>81</width>
+      <height>91</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>呼叫</string>
     </property>
    </widget>
   </widget>
