@@ -24,14 +24,17 @@ MainWindow::MainWindow(QWidget *parent) :
     qDebug()<<localip;
 
     /*初始化注册信令*/
-    init_regMsg();//初始化第一个注册信息
+    QString QIMSIstr = "460001357924680";
+    init_regMsg(QIMSIstr);//初始化第一个注册信息
     init_voiceDeRegisterRsp();//初始化 DeRegister Rsp
     init_voiceDeRegisterReq();//初始化 DeRegister Req
 
     init_sc2();//初始化sc2头
 
     /*初始化呼叫信令*/
-    init_callSetup();
+    string calledBCDNumber = "15650709603";
+    init_callSetup(calledBCDNumber);
+
     init_callSetupAck();
     init_callAlerting();
     init_callConnect();
@@ -153,7 +156,7 @@ quint32 MainWindow::getlocalIP(){
 }
 
 /*以下都是初始化信令部分*/
-void MainWindow::init_regMsg(){
+void MainWindow::init_regMsg(QString QIMSIstr){
 
         unsigned char protocolVersion = 0x00;
         regMsg[0] = protocolVersion; //0x00是测试版本，0x01是初始版本，我们先用测试版本
@@ -189,7 +192,7 @@ void MainWindow::init_regMsg(){
         //memcpy(regMsg+9,&IMSInum,sizeof(unsigned long long int));
 
         //用BCD码字来存储，不用上面的long long int
-        QString QIMSIstr = "460001357924680";
+        //QString QIMSIstr = "460001357924680";
         init_IMSI(QIMSIstr);
 
         //第18到21字节是IPAddr
@@ -282,9 +285,13 @@ void MainWindow::init_sc2(){
     SC2_header[5] = 0x00;//信令方向00为上行
 }
 
-void MainWindow::init_callSetup(){
+void MainWindow::init_callSetup(string calledBCDNumber){
+    if(calledBCDNumber.size()!=11){
+        qDebug()<<"电话号码长度有误！";
+        return;
+    }
     callSetup[0] = 0x00;//Protocol version
-    callSetup[1] = 0x15;//Message length
+    callSetup[1] = 0x15;//Message length == 21
     callSetup[2] = 0x06;//Message type
     //call ID 4个字节填全F
     memset(callSetup+3, 255,4);
@@ -296,18 +303,17 @@ void MainWindow::init_callSetup(){
     callSetup[13] = 0x03;// tag
     callSetup[14] = 0x08;// length of called BCD number
 
-    /*电话号码*/
-    string telnum = "15650709603";
-    telnum += '?';//为了最后可以补一个1111
+    /*init BCD number*/
+    calledBCDNumber += '?';//为了最后可以补一个1111
     unsigned char nums[6];
     memset(nums,0,6);
     for(int i=0;i<=5;i++){//注意大端
         int index1 = 2*i; //低位数字存在一个字节里面的低4位
         int index2 = 2*i+1;	//高位数字
-        int num1 = int(telnum[index1]- '0');
+        int num1 = int(calledBCDNumber[index1]- '0');
         unsigned char num1c = num1;
         nums[i] = nums[i] | num1c;
-        int num2 = int(telnum[index2] -'0');
+        int num2 = int(calledBCDNumber [index2] -'0');
         unsigned char num2c = (num2<<4);
         nums[i] = nums[i] | num2c;
     }
@@ -347,7 +353,7 @@ void MainWindow::init_callDisconnect(int cause){
 
     callDisconnect[0] = 0x00;//protocol version
     callDisconnect[1] = 0x07;//message length
-    callDisconnect[2] = 0x0a;//message type
+    callDisconnect[2] = 0x0b;//message type
     //后面的需要memcpy以下从PCC发送来的call ID
 
     callDisconnect[8] = char(cause);//casue

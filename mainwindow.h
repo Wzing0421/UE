@@ -16,6 +16,8 @@
 #include <arpa/inet.h>
 #include <string>
 #include <cstring>
+using namespace std;
+
 namespace Ui {
 class MainWindow;
 }
@@ -54,7 +56,7 @@ public:
 
     quint32 getlocalIP();//获得本机本地IP
 
-    void init_regMsg();//用于第一次初始化注册信息
+    void init_regMsg(QString QIMSIstr);//用于第一次初始化注册信息
     void init_IMSI(QString &IMSIstr);//初始化8字节的IMSI信息
     void init_voiceDeRegisterRsp();
     void init_voiceDeRegisterReq();
@@ -75,7 +77,7 @@ public:
     unsigned char callDisconnect[7];
     unsigned char callReleaseRsp[8];
     /*以下是呼叫过程的初始化*/
-    void init_callSetup();
+    void init_callSetup(string calledBCDNumber);
     void init_callSetupAck();
     void init_callAlerting();
     void init_callConnect();
