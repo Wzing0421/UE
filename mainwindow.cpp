@@ -10,8 +10,9 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->setupUi(this);
 
     //在此初始化
-    ui->DeReigster->setDisabled(true);
     ui->start->setDisabled(false);
+    ui->DeReigster->setDisabled(true);
+    ui->call->setDisabled(true);
 
     registerstate = UNREGISTERED;//初始化成未注册的
     regRecvPort = 10002;//本机接收注册信息的绑定端口
@@ -31,6 +32,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     init_sc2();//初始化sc2头
 
+    callstate = U0;
     /*初始化呼叫信令*/
     string calledBCDNumber = "15650709603";
     init_callSetup(calledBCDNumber);
@@ -57,8 +59,19 @@ MainWindow::MainWindow(QWidget *parent) :
         connect(regUdpSocket,SIGNAL(readyRead()),this,SLOT(recvRegInfo()));
     }
 
-    timer = new QTimer();
-    connect(timer,SIGNAL(timeout()),this,SLOT(proc_timeout()));
+    regtimer = new QTimer();//注册定时器
+    connect(regtimer,SIGNAL(timeout()),this,SLOT(proc_timeout()));
+
+    calltimerT9005 = new QTimer();
+    connect(calltimerT9005,SIGNAL(timeout()),this,SLOT(call_timeoutT9005()));
+    calltimerT9006 = new QTimer();
+    connect(calltimerT9006,SIGNAL(timeout()),this,SLOT(call_timeoutT9006()));
+    calltimerT9007 = new QTimer();
+    connect(calltimerT9007,SIGNAL(timeout()),this,SLOT(call_timeoutT9007()));
+    calltimerT9009 = new QTimer();
+    connect(calltimerT9009,SIGNAL(timeout()),this,SLOT(call_timeoutT9009()));
+    calltimerT9014 = new QTimer();
+    connect(calltimerT9014,SIGNAL(timeout()),this,SLOT(call_timeoutT9014()));
 
 }
 
@@ -76,7 +89,7 @@ void MainWindow::on_start_clicked()
     ui->start->setText("正在注册");
     ui->start->setDisabled(true);
     //这里开始的是第一次计时，等待的是PCC回复的authrization command
-    timer->start(5000);
+    regtimer->start(5000);
     int num=sendSocket->writeDatagram((char*)sc2_regMsg,sizeof(sc2_regMsg),PCCaddr,regsendPort);//num返回成功发送的字节数量
     qDebug()<<"发送初始注册消息，长度为 "<<num<<" 字节";
 
@@ -90,7 +103,7 @@ void MainWindow::recvRegInfo(){
         quint16 senderPort;//
         regUdpSocket->readDatagram(datagram.data(),datagram.size(),&senderIP,&senderPort);//发送方的IP和port
 
-        if(timer->isActive()) timer->stop();
+        if(regtimer->isActive()) regtimer->stop();
 
         char judge = datagram[2];
         if(judge == 0x02 && registerstate == UNREGISTERED){//说明是authorization command
@@ -106,7 +119,7 @@ void MainWindow::recvRegInfo(){
             memcpy(sc2_regMsg_au + 21 + sizeof(SC2_header), (char*)&str, 16);
 
             //再次发送带有鉴权的注册消息
-            timer->start(5000);
+            regtimer->start(5000);
             int num=sendSocket->writeDatagram((char*)sc2_regMsg_au,sizeof(sc2_regMsg_au),PCCaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"发送带有鉴权的注册消息，长度为 "<<num<<" 字节";
         }
@@ -116,6 +129,7 @@ void MainWindow::recvRegInfo(){
             registerstate = REGISTERED;//标识注册成功
             ui->start->setDisabled(true);
             ui->DeReigster->setDisabled(false);
+            ui->call->setDisabled(false);
         }
         else if(judge == 0x04  && registerstate == REGISTERED){//收到从PCC端来的voice DeRegister Req 应该终止业务
             ui->start->setText("开机注册");
@@ -125,6 +139,7 @@ void MainWindow::recvRegInfo(){
             qDebug()<<"发送voice DeRegister Rsp，长度为 "<<num<<" 字节";
             ui->start->setDisabled(false);
             ui->DeReigster->setDisabled(true);
+            ui->call->setDisabled(true);
 
         }
         else if(judge == 0x05  && registerstate == REGISTERED){//收到从PCC端来的voice DeRegister Rsp 可以终止业务
@@ -133,8 +148,40 @@ void MainWindow::recvRegInfo(){
             registerstate = UNREGISTERED;
             ui->start->setDisabled(false);
             ui->DeReigster->setDisabled(true);
+            ui->call->setDisabled(true);
         }
 
+        else if(judge == 0x07 && callstate == U1){
+            qDebug()<<"收到call setup ack!";
+
+            callstate = U3;
+            calltimerT9005 ->stop();
+            /*理论上这里受到的从PCC发过来的call setup ack里面有PCC分配的call ID信息*/
+            /*主叫只需要发送call connect ack所以只初始化这个*/
+            memcpy(callConnectAck+3,datagram+3,4);
+
+            //这个定时器用于等待call alerting
+            calltimerT9006 ->start(5000);
+
+        }
+        else if(judge == 0x08 && callstate == U3){
+            qDebug()<<"收到call alerting!";
+            callstate = U4;
+            calltimerT9006 -> stop();
+            if(calltimerT9005->isActive()) calltimerT9005->stop();
+
+            calltimerT9007->start(30000);
+        }
+        else if(judge == 0x09 && (callstate == U4 || callstate == U3)){
+            qDebug()<<"收到call connect";
+            callstate = U10;
+            calltimerT9007->stop();
+            if(calltimerT9005->isActive()) calltimerT9005->stop();
+            if(calltimerT9006->isActive()) calltimerT9006->stop();
+            int num=sendSocket->writeDatagram((char*)callConnectAck,sizeof(callConnectAck),PCCaddr,regsendPort);//num返回成功发送的字节数量
+            qDebug()<<"主叫建立成功！ 发送call connect ack，长度为 "<<num<<" 字节";
+            ui->call->setDisabled(false);
+        }
         //char * strJudge=datagram.data();//把QByteArray转换成char *
     }
 }
@@ -372,12 +419,12 @@ void MainWindow::init_callReleaseRsp(int cause){
 /*上面都是初始化信令*/
 void MainWindow::proc_timeout(){
 
-    timer->stop();
+    regtimer->stop();
 
     if(registerstate == UNREGISTERED){//仍然是第一次注册都没收到回复的状态
         if(Resendcnt <=1){
             Resendcnt++;
-            timer->start(5000);
+            regtimer->start(5000);
             int num=sendSocket->writeDatagram((char*)sc2_regMsg,sizeof(sc2_regMsg),PCCaddr,regsendPort);//num返回成功发送的字节数量
 
             qDebug()<<"第 "<<Resendcnt<<" 次数重发 初始 注册消息，长度为 "<<num<<" 字节";
@@ -396,9 +443,8 @@ void MainWindow::proc_timeout(){
     else if(registerstate == AUTH_PROC){//这说明是鉴权注册超时了
         if(Resend_au_cnt <=1){
             Resend_au_cnt++;
-            timer->start(5000);
+            regtimer->start(5000);
             int num=sendSocket->writeDatagram((char*)sc2_regMsg,sizeof(sc2_regMsg),PCCaddr,regsendPort);//num返回成功发送的字节数量
-            //sendSocket->waitForReadyRead();
             qDebug()<<"第 "<<Resendcnt<<" 次数重发 鉴权 注册消息，长度为 "<<num<<" 字节";
         }
         else{
@@ -428,7 +474,7 @@ void MainWindow::on_DeReigster_clicked()
         qDebug()<<"请先进行注册";
     }
     ui->DeReigster->setDisabled(true);
-    timer->start(5000);
+    regtimer->start(5000);
     int num=sendSocket->writeDatagram((char*)sc2_voiceDeRegisterReq,sizeof(sc2_voiceDeRegisterReq),PCCaddr,regsendPort);//num返回成功发送的字节数量
     //sendSocket->waitForReadyRead();
     qDebug()<<"UE请求注销,长度: "<<num;
@@ -441,6 +487,53 @@ void MainWindow::on_call_clicked()//呼叫按钮
         qDebug()<<"请先注册！";
         return;
     }
+    /*以下流程是主叫建立流程。我首先忽略掉被叫建立的过程，模拟的是全程顺利的过程，呼叫成功之后应该开启语音发送线程*/
+
+    callstate = U1;
+    //发送呼叫建立信令
+    calltimerT9005 -> start(5000);
+
+    int num=sendSocket->writeDatagram((char*)callSetup,sizeof(callSetup),PCCaddr,regsendPort);//num返回成功发送的字节数量
+    qDebug()<<"UE sends call setup,长度: "<<num;
+    ui->call->setDisabled(true);
+
+}
+
+void MainWindow::call_timeoutT9005(){//呼叫超时处理
+
+    calltimerT9005 ->stop();
+    if(calltimerT9006->isActive()) calltimerT9006->stop();
+    if(calltimerT9007->isActive()) calltimerT9007->stop();
+    callstate = U0;
+    qDebug()<<"T9005 超时， 请重新呼叫";
+    ui->call->setDisabled(false);
+
+}
+void MainWindow::call_timeoutT9006(){//呼叫超时处理
+
+    calltimerT9006 ->stop();
+    if(calltimerT9005->isActive()) calltimerT9005->stop();
+    if(calltimerT9007->isActive()) calltimerT9007->stop();
+    callstate = U0;
+    qDebug()<<"T9006 超时， 请重新呼叫";
+    ui->call->setDisabled(false);
+
+}
+void MainWindow::call_timeoutT9007(){//呼叫超时处理
+
+    calltimerT9007 ->stop();
+    if(calltimerT9005->isActive()) calltimerT9005->stop();
+    if(calltimerT9006->isActive()) calltimerT9006->stop();
+    callstate = U0;
+    qDebug()<<"T9007 超时， 请重新呼叫";
+    ui->call->setDisabled(false);
+
+}
+void MainWindow::call_timeoutT9009(){//呼叫超时处理
+
+
+}
+void MainWindow::call_timeoutT9014(){//呼叫超时处理
 
 
 }

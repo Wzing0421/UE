@@ -38,7 +38,7 @@ public:
     QHostAddress PCCaddr;//PCC的IP地址
     quint32 localip; //本机IP地址
 
-    QTimer *timer;
+    QTimer *regtimer;
     int Resendcnt; //用于记录register req的重发次数
     int Resend_au_cnt;//用于记录鉴权注册重发的次数
 
@@ -63,11 +63,18 @@ public:
     void init_sc2();//初始化sc2的头
 
 
-    /*呼叫状态机的状态*/
+    /*呼叫状态机的状态,我在这里面加了一个U状态，表示的是还没有注册成功的时候的呼叫状态，这个状态不同于U0空闲态*/
     enum CALL_STATE{
        U0,U1,U2,U3,U4,U5,U6,U7,U8,U9,U10,U19
     };
     CALL_STATE callstate;
+
+    QTimer *calltimerT9005;
+    QTimer *calltimerT9006;
+    QTimer *calltimerT9007;
+    QTimer *calltimerT9009;
+    QTimer *calltimerT9014;
+
     /*呼叫状态的变量*/
     unsigned char callSetup[21];
     unsigned char callSetupAck[7];
@@ -93,6 +100,11 @@ private slots:
     void recvRegInfo();//接收注册消息的回调函数
 
     void proc_timeout();//注册时候的超时处理，设置T9001=5s
+    void call_timeoutT9005();
+    void call_timeoutT9006();
+    void call_timeoutT9007();
+    void call_timeoutT9009();
+    void call_timeoutT9014();
 
     void on_DeReigster_clicked();
 
