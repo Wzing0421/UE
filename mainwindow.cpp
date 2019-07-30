@@ -127,6 +127,7 @@ void MainWindow::recvRegInfo(){
             ui->start->setText("注册成功");
             qDebug()<<"收到 register rsp,注册成功！";
             registerstate = REGISTERED;//标识注册成功
+            callstate = U0;
             ui->start->setDisabled(true);
             ui->DeReigster->setDisabled(false);
             ui->call->setDisabled(false);
@@ -135,6 +136,7 @@ void MainWindow::recvRegInfo(){
             ui->start->setText("开机注册");
             qDebug()<<"收到PCC 发送的voice DeRegister Req,需要重新注册！";
             registerstate = UNREGISTERED;//需要重新注册
+            callstate = U0;
             int num=sendSocket->writeDatagram((char*)sc2_voiceDeRegisterRsp,sizeof(sc2_voiceDeRegisterRsp),PCCaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"发送voice DeRegister Rsp，长度为 "<<num<<" 字节";
             ui->start->setDisabled(false);
@@ -146,6 +148,7 @@ void MainWindow::recvRegInfo(){
             ui->start->setText("开机注册");
             qDebug()<<"收到PCC 发送的voice DeRegister Rsp回应，注销成功！";
             registerstate = UNREGISTERED;
+            callstate = U0;
             ui->start->setDisabled(false);
             ui->DeReigster->setDisabled(true);
             ui->call->setDisabled(true);
@@ -158,7 +161,8 @@ void MainWindow::recvRegInfo(){
             calltimerT9005 ->stop();
             /*理论上这里受到的从PCC发过来的call setup ack里面有PCC分配的call ID信息*/
             /*主叫只需要发送call connect ack所以只初始化这个*/
-            memcpy(callConnectAck+3,datagram+3,4);
+            char *str = datagram.data();
+            memcpy(callConnectAck+3,str+3,4);
 
             //这个定时器用于等待call alerting
             calltimerT9006 ->start(5000);
@@ -178,7 +182,7 @@ void MainWindow::recvRegInfo(){
             calltimerT9007->stop();
             if(calltimerT9005->isActive()) calltimerT9005->stop();
             if(calltimerT9006->isActive()) calltimerT9006->stop();
-            int num=sendSocket->writeDatagram((char*)callConnectAck,sizeof(callConnectAck),PCCaddr,regsendPort);//num返回成功发送的字节数量
+            int num=sendSocket->writeDatagram((char*)sc2_callConnectAck,sizeof(sc2_callConnectAck),PCCaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"主叫建立成功！ 发送call connect ack，长度为 "<<num<<" 字节";
             ui->call->setDisabled(false);
         }
@@ -247,11 +251,11 @@ void MainWindow::init_regMsg(QString QIMSIstr){
         memcpy(regMsg+17,(char*) &IPnum, 4);
 
         //加上sc2头
-        short len = sizeof(regMsg);
+        short len = htons(sizeof(regMsg));
         memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_regMsg,SC2_header,sizeof(SC2_header)); memcpy(sc2_regMsg+sizeof(SC2_header), regMsg, sizeof(regMsg));
 
         memcpy(regMsg_au,regMsg,21);
-        len = sizeof(regMsg_au);
+        len = htons(sizeof(regMsg_au));
         memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_regMsg_au,SC2_header,sizeof(SC2_header)); memcpy(sc2_regMsg_au+sizeof(SC2_header), regMsg_au, sizeof(regMsg_au));
 
         /*
@@ -311,7 +315,7 @@ void MainWindow::init_voiceDeRegisterReq(){//初始化DeRegisterReq
     voiceDeRegisterReq[8] = 0x03;//cause 0x03表示的是UE 侧的注销请求
     voiceDeRegisterReq[9] = 0x10;//UE关机注销
 
-    short len = sizeof(voiceDeRegisterReq);
+    short len = htons(sizeof(voiceDeRegisterReq));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_voiceDeRegisterReq,SC2_header,sizeof(SC2_header)); memcpy(sc2_voiceDeRegisterReq+sizeof(SC2_header), voiceDeRegisterReq, sizeof(voiceDeRegisterReq));
 }
 
@@ -322,7 +326,7 @@ void MainWindow::init_voiceDeRegisterRsp(){
     voiceDeRegisterRsp[2] = 0x05;//message type
     //后面5个字节的STMSI目前就是0，是和前面RegMsg是一样的
 
-    short len = sizeof(voiceDeRegisterRsp);
+    short len = htons(sizeof(voiceDeRegisterRsp));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_voiceDeRegisterRsp,SC2_header,sizeof(SC2_header)); memcpy(sc2_voiceDeRegisterRsp+sizeof(SC2_header), voiceDeRegisterRsp, sizeof(voiceDeRegisterRsp));
 }
 
@@ -365,6 +369,10 @@ void MainWindow::init_callSetup(string calledBCDNumber){
         nums[i] = nums[i] | num2c;
     }
     memcpy(callSetup+15,nums,6);
+
+    short len = htons(sizeof(callSetup));
+    memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callSetup,SC2_header,sizeof(SC2_header)); memcpy(sc2_callSetup+sizeof(SC2_header), callSetup, sizeof(callSetup));
+
 }
 
 void MainWindow::init_callSetupAck(){
@@ -372,6 +380,9 @@ void MainWindow::init_callSetupAck(){
     callSetupAck[1] = 0x07;//message length
     callSetupAck[2] = 0x07;//message type
     //后面的需要memcpy以下从PCC发送来的call ID
+
+    short len = htons(sizeof(callSetupAck));
+    memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callSetupAck,SC2_header,sizeof(SC2_header)); memcpy(sc2_callSetupAck+sizeof(SC2_header), callSetupAck, sizeof(callSetupAck));
 }
 
 void MainWindow::init_callAlerting(){
@@ -379,6 +390,9 @@ void MainWindow::init_callAlerting(){
     callAllerting[1] = 0x07;//message length
     callAllerting[2] = 0x08;//message type
     //后面的需要memcpy以下从PCC发送来的call ID
+
+    short len = htons(sizeof(callAllerting));
+    memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callAllerting,SC2_header,sizeof(SC2_header)); memcpy(sc2_callAllerting+sizeof(SC2_header), callAllerting, sizeof(callAllerting));
 }
 
 void MainWindow::init_callConnect(){
@@ -387,6 +401,9 @@ void MainWindow::init_callConnect(){
     callConnect[2] = 0x09;//message type
     //后面的需要memcpy以下从PCC发送来的call ID
     callConnect[7] = 0x01;//call type
+
+    short len = htons(sizeof(callConnect));
+    memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callConnect,SC2_header,sizeof(SC2_header)); memcpy(sc2_callConnect+sizeof(SC2_header), callConnect, sizeof(callConnect));
 }
 
 void MainWindow::init_callConnectAck(){
@@ -394,6 +411,9 @@ void MainWindow::init_callConnectAck(){
     callConnectAck[1] = 0x07;//message length
     callConnectAck[2] = 0x0a;//message type
     //后面的需要memcpy以下从PCC发送来的call ID
+
+    short len = htons(sizeof(callConnectAck));
+    memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callConnectAck,SC2_header,sizeof(SC2_header)); memcpy(sc2_callConnectAck+sizeof(SC2_header), callConnectAck, sizeof(callConnectAck));
 }
 
 void MainWindow::init_callDisconnect(int cause){
@@ -415,6 +435,9 @@ void MainWindow::init_callReleaseRsp(int cause){
     //后面的需要memcpy以下从PCC发送来的call ID
 
     callReleaseRsp[8] = char(cause);//casue
+
+    short len = htons(sizeof(callReleaseRsp));
+    memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callReleaseRsp,SC2_header,sizeof(SC2_header)); memcpy(sc2_callReleaseRsp+sizeof(SC2_header), callReleaseRsp, sizeof(callReleaseRsp));
 }
 /*上面都是初始化信令*/
 void MainWindow::proc_timeout(){
@@ -434,10 +457,12 @@ void MainWindow::proc_timeout(){
             Resendcnt = 0;
             Resend_au_cnt = 0;
             registerstate = UNREGISTERED;
+            callstate = U0;
             ui->start->setText("开机注册");
             qDebug()<<"第一次注册没用收到authorization command,请点击开机注册按钮重试！";
             ui->start->setDisabled(false);
             ui->DeReigster->setDisabled(true);
+            ui->call->setDisabled(true);
         }
     }
     else if(registerstate == AUTH_PROC){//这说明是鉴权注册超时了
@@ -451,19 +476,22 @@ void MainWindow::proc_timeout(){
             Resendcnt = 0;
             Resend_au_cnt = 0;
             registerstate = UNREGISTERED;
+            callstate = U0;
             ui->start->setText("开机注册");
             qDebug()<<"鉴权注册没有收到 voice register rsp, 请点击开机注册按钮重试！";
             ui->start->setDisabled(false);
             ui->DeReigster->setDisabled(true);
+            ui->call->setDisabled(true);
         }
     }
     else if(registerstate == REGISTERED){//UE注销超时
         registerstate = UNREGISTERED;
+        callstate = U0;
         ui->start->setText("开机注册");
         qDebug()<<"UE注销超时，自动注销！";
         ui->start->setDisabled(false);
         ui->DeReigster->setDisabled(true);
-
+        ui->call->setDisabled(true);
     }
 
 }
@@ -476,7 +504,6 @@ void MainWindow::on_DeReigster_clicked()
     ui->DeReigster->setDisabled(true);
     regtimer->start(5000);
     int num=sendSocket->writeDatagram((char*)sc2_voiceDeRegisterReq,sizeof(sc2_voiceDeRegisterReq),PCCaddr,regsendPort);//num返回成功发送的字节数量
-    //sendSocket->waitForReadyRead();
     qDebug()<<"UE请求注销,长度: "<<num;
 }
 
@@ -487,13 +514,17 @@ void MainWindow::on_call_clicked()//呼叫按钮
         qDebug()<<"请先注册！";
         return;
     }
+    if(callstate !=U0){
+        qDebug()<<"已经在通话";
+        return;
+    }
     /*以下流程是主叫建立流程。我首先忽略掉被叫建立的过程，模拟的是全程顺利的过程，呼叫成功之后应该开启语音发送线程*/
-
+    ui->call->setDisabled(true);
     callstate = U1;
     //发送呼叫建立信令
     calltimerT9005 -> start(5000);
-
-    int num=sendSocket->writeDatagram((char*)callSetup,sizeof(callSetup),PCCaddr,regsendPort);//num返回成功发送的字节数量
+    //UE -> PCC
+    int num=sendSocket->writeDatagram((char*)sc2_callSetup,sizeof(sc2_callSetup),PCCaddr,regsendPort);//num返回成功发送的字节数量
     qDebug()<<"UE sends call setup,长度: "<<num;
     ui->call->setDisabled(true);
 

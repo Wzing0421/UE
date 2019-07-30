@@ -76,13 +76,14 @@ public:
     QTimer *calltimerT9014;
 
     /*呼叫状态的变量*/
-    unsigned char callSetup[21];
-    unsigned char callSetupAck[7];
-    unsigned char callAllerting[7];
-    unsigned char callConnect[8];
-    unsigned char callConnectAck[8];
-    unsigned char callDisconnect[7];
-    unsigned char callReleaseRsp[8];
+    unsigned char callSetup[21],sc2_callSetup[29];
+    unsigned char callSetupAck[7],sc2_callSetupAck[15];
+    unsigned char callAllerting[7],sc2_callAllerting[15];
+    unsigned char callConnect[8],sc2_callConnect[16];
+    unsigned char callConnectAck[8],sc2_callConnectAck[16];
+    unsigned char callDisconnect[7],sc2_callDisconnect[15];
+    unsigned char callReleaseRsp[8],sc2_callReleaseRsp[16];
+
     /*以下是呼叫过程的初始化*/
     void init_callSetup(string calledBCDNumber);
     void init_callSetupAck();
