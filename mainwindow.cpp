@@ -1,3 +1,5 @@
+/*7月30日更新日志：把UE主叫与主叫的定时器写好了，下一步完善被叫的逻辑和定时器*/
+/*完成情况：把UE的被叫完成了，没用完成测试，明天完成UE被叫的测试以及PCC服务器对于被叫的测试*/
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
@@ -19,6 +21,8 @@ MainWindow::MainWindow(QWidget *parent) :
     regsendPort = 5000;//发送注册信息的目的端口
     Resendcnt = 0;//设定重发次数初始化为0,当加到2的时候还没有回复，则注册失败
     Resend_au_cnt = 0; //设定重发鉴权注册次数，初始化为0,当加到2的时候还没有回复，则注册失败
+    CallConnectcnt = 0;//设定call connect册次数，初始化为0
+    CallDisconnectcnt = 0;//设定call connect册次数，初始化为0
 
     PCCaddr.setAddress("162.105.85.198");//设置PCC的IP
     localip = getlocalIP();//获得本机的IP
@@ -106,6 +110,7 @@ void MainWindow::recvRegInfo(){
         if(regtimer->isActive()) regtimer->stop();
 
         char judge = datagram[2];
+        /*这里面涉及到接收到包之后复制的地方还需要改，不是说加了sc2头之后仅仅吧索引从2变成10就可以了*/
         if(judge == 0x02 && registerstate == UNREGISTERED){//说明是authorization command
             qDebug()<<"收到authorization command！";
             registerstate = AUTH_PROC;
@@ -137,6 +142,11 @@ void MainWindow::recvRegInfo(){
             qDebug()<<"收到PCC 发送的voice DeRegister Req,需要重新注册！";
             registerstate = UNREGISTERED;//需要重新注册
             callstate = U0;
+            Resendcnt = 0;
+            Resend_au_cnt = 0;
+            CallConnectcnt = 0;
+            CallDisconnectcnt = 0;
+
             int num=sendSocket->writeDatagram((char*)sc2_voiceDeRegisterRsp,sizeof(sc2_voiceDeRegisterRsp),PCCaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"发送voice DeRegister Rsp，长度为 "<<num<<" 字节";
             ui->start->setDisabled(false);
@@ -149,11 +159,42 @@ void MainWindow::recvRegInfo(){
             qDebug()<<"收到PCC 发送的voice DeRegister Rsp回应，注销成功！";
             registerstate = UNREGISTERED;
             callstate = U0;
+            Resendcnt = 0;
+            Resend_au_cnt = 0;
+            CallConnectcnt = 0;
+            CallDisconnectcnt = 0;
             ui->start->setDisabled(false);
             ui->DeReigster->setDisabled(true);
             ui->call->setDisabled(true);
         }
+        else if(judge == 0x06 && callstate == U0){//这是被叫的状态转移
+            /*发送call setup ack, call alerting, call connect*/
+            qDebug()<<"收到call setup";
 
+            callstate = U6;//呼叫发现态
+            char *str = datagram.data();
+            memcpy(sc2_callSetupAck+11,str+3,4);
+            memcpy(sc2_callAllerting+11,str+3,4);
+            memcpy(sc2_callConnect+11,str+3,4);
+            memcpy(sc2_callDisconnect+11,str+3,4);
+
+
+            int num=sendSocket->writeDatagram((char*)sc2_callSetupAck,sizeof(sc2_callSetupAck),PCCaddr,regsendPort);
+            qDebug()<<" 发送call setup ack，长度为 "<<num<<" 字节";
+            callstate = U9;//呼叫确认态
+
+            num=sendSocket->writeDatagram((char*)sc2_callAllerting,sizeof(sc2_callAllerting),PCCaddr,regsendPort);
+            qDebug()<<" 发送call alerting ack，长度为 "<<num<<" 字节";
+            callstate = U7;//呼叫接受态
+
+            //等待接听
+            QThread::sleep(2);
+            calltimerT9014->start(5000);
+            callstate = U8;//呼叫连接请求态
+            num=sendSocket->writeDatagram((char*)sc2_callConnect,sizeof(sc2_callConnect),PCCaddr,regsendPort);
+            qDebug()<<" 发送call connect，长度为 "<<num<<" 字节";
+
+        }
         else if(judge == 0x07 && callstate == U1){
             qDebug()<<"收到call setup ack!";
 
@@ -162,7 +203,11 @@ void MainWindow::recvRegInfo(){
             /*理论上这里受到的从PCC发过来的call setup ack里面有PCC分配的call ID信息*/
             /*主叫只需要发送call connect ack所以只初始化这个*/
             char *str = datagram.data();
-            memcpy(callConnectAck+3,str+3,4);
+
+            /*这里可能要修改，因为接收到的也需要加上sc2头*/
+            memcpy(sc2_callConnectAck+11,str+3,4);
+            memcpy(sc2_callDisconnect+11,str+3,4);
+            memcpy(sc2_callReleaseRsp+11, str+3,4);
 
             //这个定时器用于等待call alerting
             calltimerT9006 ->start(5000);
@@ -185,6 +230,15 @@ void MainWindow::recvRegInfo(){
             int num=sendSocket->writeDatagram((char*)sc2_callConnectAck,sizeof(sc2_callConnectAck),PCCaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"主叫建立成功！ 发送call connect ack，长度为 "<<num<<" 字节";
             ui->call->setDisabled(false);
+        }
+        else if(judge == 0x0a && callstate == U8){
+            qDebug()<<"收到call connect ack,通话建立成功";
+            callstate = U10;
+            calltimerT9014->stop();
+
+            CallConnectcnt = 0;
+            CallDisconnectcnt = 0;
+            /*就可以发送语音了*/
         }
         //char * strJudge=datagram.data();//把QByteArray转换成char *
     }
@@ -456,6 +510,8 @@ void MainWindow::proc_timeout(){
             //状态清零，计数器也清零
             Resendcnt = 0;
             Resend_au_cnt = 0;
+            CallConnectcnt = 0;
+            CallDisconnectcnt = 0;
             registerstate = UNREGISTERED;
             callstate = U0;
             ui->start->setText("开机注册");
@@ -475,6 +531,8 @@ void MainWindow::proc_timeout(){
         else{
             Resendcnt = 0;
             Resend_au_cnt = 0;
+            CallConnectcnt = 0;
+            CallDisconnectcnt = 0;
             registerstate = UNREGISTERED;
             callstate = U0;
             ui->start->setText("开机注册");
@@ -487,6 +545,10 @@ void MainWindow::proc_timeout(){
     else if(registerstate == REGISTERED){//UE注销超时
         registerstate = UNREGISTERED;
         callstate = U0;
+        Resendcnt = 0;
+        Resend_au_cnt = 0;
+        CallConnectcnt = 0;
+        CallDisconnectcnt = 0;
         ui->start->setText("开机注册");
         qDebug()<<"UE注销超时，自动注销！";
         ui->start->setDisabled(false);
@@ -530,41 +592,83 @@ void MainWindow::on_call_clicked()//呼叫按钮
 
 }
 
-void MainWindow::call_timeoutT9005(){//呼叫超时处理
+void MainWindow::call_timeoutT9005(){//call setup超时处理
 
     calltimerT9005 ->stop();
     if(calltimerT9006->isActive()) calltimerT9006->stop();
     if(calltimerT9007->isActive()) calltimerT9007->stop();
     callstate = U0;
+    CallConnectcnt = 0;
+    CallDisconnectcnt = 0;
     qDebug()<<"T9005 超时， 请重新呼叫";
     ui->call->setDisabled(false);
 
 }
-void MainWindow::call_timeoutT9006(){//呼叫超时处理
+void MainWindow::call_timeoutT9006(){//呼叫call setup ack超时处理
 
     calltimerT9006 ->stop();
     if(calltimerT9005->isActive()) calltimerT9005->stop();
     if(calltimerT9007->isActive()) calltimerT9007->stop();
     callstate = U0;
+    CallConnectcnt = 0;
+    CallDisconnectcnt = 0;
     qDebug()<<"T9006 超时， 请重新呼叫";
     ui->call->setDisabled(false);
 
 }
-void MainWindow::call_timeoutT9007(){//呼叫超时处理
+void MainWindow::call_timeoutT9007(){//call connect超时处理
 
     calltimerT9007 ->stop();
     if(calltimerT9005->isActive()) calltimerT9005->stop();
     if(calltimerT9006->isActive()) calltimerT9006->stop();
     callstate = U0;
+    CallConnectcnt = 0;
+    CallDisconnectcnt = 0;
     qDebug()<<"T9007 超时， 请重新呼叫";
     ui->call->setDisabled(false);
 
 }
-void MainWindow::call_timeoutT9009(){//呼叫超时处理
+void MainWindow::call_timeoutT9009(){//call disconnect超时处理,只重发一次
 
+    calltimerT9009 -> stop();
+
+    if(CallDisconnectcnt <=0){
+        CallDisconnectcnt++;
+        calltimerT9009->start(5000);
+        int num=sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
+
+        qDebug()<<"第 "<<CallDisconnectcnt<<" 次数重发 call disconnect消息，长度为 "<<num<<" 字节";
+    }
+    else{
+        qDebug()<<"call disconnect 重发超过一次,清空呼叫资源";
+        callstate = U0;
+        CallConnectcnt = 0;
+        CallDisconnectcnt = 0;
+        ui->call->setDisabled(false);
+    }
 
 }
-void MainWindow::call_timeoutT9014(){//呼叫超时处理
+void MainWindow::call_timeoutT9014(){//call connect超时处理
 
+    calltimerT9014 -> stop();
 
+    if(CallConnectcnt <=1){
+        CallConnectcnt++;
+        calltimerT9014->start(5000);
+        int num=sendSocket->writeDatagram((char*)sc2_callConnect,sizeof(sc2_callConnect),PCCaddr,regsendPort);
+
+        qDebug()<<"第 "<<CallConnectcnt<<" 次数重发 call connect消息，长度为 "<<num<<" 字节";
+    }
+    else{
+        CallConnectcnt = 0;
+        CallDisconnectcnt = 0;
+        qDebug()<<"call connect 重发超过两次";
+        int cause = 6;
+        memcpy(sc2_callDisconnect+15,(char*)&cause,1);
+
+        /*call connect2次超时之后重新发送call disconnect*/
+        calltimerT9009->start(5000);
+        sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
+        qDebug()<<"call connect 2次超时之后重新发送call disconnect！";
+    }
 }

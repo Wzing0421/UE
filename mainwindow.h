@@ -11,6 +11,7 @@
 #include <QCryptographicHash>
 #include <QDebug>
 #include <QTimer>
+#include <QtCore/QThread>
 
 #include <iostream>
 #include <arpa/inet.h>
@@ -84,6 +85,8 @@ public:
     unsigned char callDisconnect[7],sc2_callDisconnect[15];
     unsigned char callReleaseRsp[8],sc2_callReleaseRsp[16];
 
+    int CallConnectcnt; //用于记录call connect的重发次数
+    int CallDisconnectcnt;
     /*以下是呼叫过程的初始化*/
     void init_callSetup(string calledBCDNumber);
     void init_callSetupAck();
