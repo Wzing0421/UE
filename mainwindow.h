@@ -114,6 +114,7 @@ private slots:
 
     void on_call_clicked();
 
+    void on_disconnect_clicked();
 
 private:
     Ui::MainWindow *ui;

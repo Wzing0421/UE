@@ -15,6 +15,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->start->setDisabled(false);
     ui->DeReigster->setDisabled(true);
     ui->call->setDisabled(true);
+    ui->disconnect->setDisabled(true);
 
     registerstate = UNREGISTERED;//初始化成未注册的
     regRecvPort = 10002;//本机接收注册信息的绑定端口
@@ -152,6 +153,7 @@ void MainWindow::recvRegInfo(){
             ui->start->setDisabled(false);
             ui->DeReigster->setDisabled(true);
             ui->call->setDisabled(true);
+            ui->disconnect->setDisabled(true);
 
         }
         else if(judge == 0x05  && registerstate == REGISTERED){//收到从PCC端来的voice DeRegister Rsp 可以终止业务
@@ -166,8 +168,10 @@ void MainWindow::recvRegInfo(){
             ui->start->setDisabled(false);
             ui->DeReigster->setDisabled(true);
             ui->call->setDisabled(true);
+            ui->disconnect->setDisabled(true);
+
         }
-        else if(judge == 0x06 && callstate == U0){//这是被叫的状态转移
+        else if(judge == 0x06 && callstate == U0 && registerstate == REGISTERED){//这是被叫的状态转移
             /*发送call setup ack, call alerting, call connect*/
             qDebug()<<"收到call setup";
 
@@ -177,14 +181,15 @@ void MainWindow::recvRegInfo(){
             memcpy(sc2_callAllerting+11,str+3,4);
             memcpy(sc2_callConnect+11,str+3,4);
             memcpy(sc2_callDisconnect+11,str+3,4);
+            memcpy(sc2_callReleaseRsp+11,str+3,4);
 
 
             int num=sendSocket->writeDatagram((char*)sc2_callSetupAck,sizeof(sc2_callSetupAck),PCCaddr,regsendPort);
-            qDebug()<<" 发送call setup ack，长度为 "<<num<<" 字节";
+            qDebug()<<"发送call setup ack，长度为 "<<num<<" 字节";
             callstate = U9;//呼叫确认态
 
             num=sendSocket->writeDatagram((char*)sc2_callAllerting,sizeof(sc2_callAllerting),PCCaddr,regsendPort);
-            qDebug()<<" 发送call alerting ack，长度为 "<<num<<" 字节";
+            qDebug()<<"发送call alerting，长度为 "<<num<<" 字节";
             callstate = U7;//呼叫接受态
 
             //等待接听
@@ -192,7 +197,7 @@ void MainWindow::recvRegInfo(){
             calltimerT9014->start(5000);
             callstate = U8;//呼叫连接请求态
             num=sendSocket->writeDatagram((char*)sc2_callConnect,sizeof(sc2_callConnect),PCCaddr,regsendPort);
-            qDebug()<<" 发送call connect，长度为 "<<num<<" 字节";
+            qDebug()<<"发送call connect，长度为 "<<num<<" 字节";
 
         }
         else if(judge == 0x07 && callstate == U1){
@@ -219,6 +224,7 @@ void MainWindow::recvRegInfo(){
             calltimerT9006 -> stop();
             if(calltimerT9005->isActive()) calltimerT9005->stop();
 
+            ui->disconnect->setDisabled(false);//这个时候如果在响铃的时候也是可以结束呼叫的
             calltimerT9007->start(30000);
         }
         else if(judge == 0x09 && (callstate == U4 || callstate == U3)){
@@ -229,7 +235,8 @@ void MainWindow::recvRegInfo(){
             if(calltimerT9006->isActive()) calltimerT9006->stop();
             int num=sendSocket->writeDatagram((char*)sc2_callConnectAck,sizeof(sc2_callConnectAck),PCCaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"主叫建立成功！ 发送call connect ack，长度为 "<<num<<" 字节";
-            ui->call->setDisabled(false);
+
+            ui->call->setDisabled(true);
         }
         else if(judge == 0x0a && callstate == U8){
             qDebug()<<"收到call connect ack,通话建立成功";
@@ -238,7 +245,32 @@ void MainWindow::recvRegInfo(){
 
             CallConnectcnt = 0;
             CallDisconnectcnt = 0;
-            /*就可以发送语音了*/
+            ui->call->setDisabled(true);
+            ui->disconnect->setDisabled(false);
+            /*就可以开启语音发送线程*/
+
+        }
+        else if(judge == 0x0c){//收到Call Release Req ;U3,4,7,8,9,10状态都需要变成U0空闲态
+            int cause = datagram[7];
+            qDebug()<<"收到call Release Req,原因索引是： "<<cause<<" ,释放资源";
+
+            /*P15页UE取消呼叫或者是P16页被叫UE没接听或者PCC拒绝呼叫，则不需要杀掉语音进程，否则P15页UE挂机则需要杀掉语音进程，根据呼叫状态区分即可*/
+
+
+            callstate = U0;
+            calltimerT9009->stop();
+            /*从严谨起见，应该把所有的计时器都停下，虽然理论上只有T9009在运行*/
+            if(calltimerT9005->isActive()) calltimerT9005->stop();
+            if(calltimerT9006->isActive()) calltimerT9006->stop();
+            if(calltimerT9007->isActive()) calltimerT9007->stop();
+            if(calltimerT9014->isActive()) calltimerT9014->stop();
+            int num=sendSocket->writeDatagram((char*)sc2_callReleaseRsp,sizeof(sc2_callReleaseRsp),PCCaddr,regsendPort);//发送callReleaseRsp
+            qDebug()<<"发送call Release Rsp: "<<num<<" 字节";
+            qDebug()<<"-------结束呼叫--------";
+            ui->call->setDisabled(false);
+            ui->disconnect->setDisabled(true);
+            CallConnectcnt = 0;
+            CallDisconnectcnt = 0;
         }
         //char * strJudge=datagram.data();//把QByteArray转换成char *
     }
@@ -479,6 +511,9 @@ void MainWindow::init_callDisconnect(int cause){
 
     callDisconnect[8] = char(cause);//casue
 
+    short len = htons(sizeof(callDisconnect));
+    memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callDisconnect,SC2_header,sizeof(SC2_header)); memcpy(sc2_callDisconnect+sizeof(SC2_header), callDisconnect, sizeof(callDisconnect));
+
 }
 
 void MainWindow::init_callReleaseRsp(int cause){
@@ -645,6 +680,7 @@ void MainWindow::call_timeoutT9009(){//call disconnect超时处理,只重发一�
         CallConnectcnt = 0;
         CallDisconnectcnt = 0;
         ui->call->setDisabled(false);
+        ui->disconnect->setDisabled(true);
     }
 
 }
@@ -668,7 +704,40 @@ void MainWindow::call_timeoutT9014(){//call connect超时处理
 
         /*call connect2次超时之后重新发送call disconnect*/
         calltimerT9009->start(5000);
+        callstate = U19;//进入资源释放态
         sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
         qDebug()<<"call connect 2次超时之后重新发送call disconnect！";
     }
+}
+
+void MainWindow::on_disconnect_clicked()//主叫或者被叫的结束通话按钮
+{
+    ui->call->setDisabled(false);
+    ui->disconnect->setDisabled(true);
+
+    if(callstate == U4){//这种情况是在响铃的时候主叫点击了disconnect按钮
+        //启动T9009定时器，关闭T9007定时器
+        CallDisconnectcnt = 0;
+        calltimerT9007->stop();
+        calltimerT9009->start(5000);
+
+        //进入资源释放态
+        callstate = U19;
+        sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
+        qDebug()<<"主叫在响铃期间停止呼叫，发送call Disconnect!";
+
+    }
+    else if(callstate == U10){//在通话中停止呼叫
+        //启动T9009定时器，关闭T9007定时器
+        CallDisconnectcnt = 0;
+        calltimerT9007->stop();
+        calltimerT9009->start(5000);
+
+        /*终止语音线程，并且还有填写disconnect 的cause是 用户挂机*/
+        //进入资源释放态
+        callstate = U19;
+        sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
+        qDebug()<<"UE 正常用户挂机，发送call Disconnect!";
+    }
+
 }
