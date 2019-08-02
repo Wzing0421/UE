@@ -42,6 +42,7 @@ public:
     QTimer *regtimer;
     int Resendcnt; //用于记录register req的重发次数
     int Resend_au_cnt;//用于记录鉴权注册重发的次数
+    int Resend_DeReg_cnt;//用于记录注销重发的次数
 
     //注意都是大端存储,信号以及加上sc2头的信号
     unsigned char regMsg[21],sc2_regMsg[29];//第一次注册所用的注册信息
@@ -96,6 +97,10 @@ public:
     void init_callDisconnect(int cause);
     void init_callReleaseRsp(int cause);
 
+    /*释放注册资源和呼叫资源*/
+    void ReleaseRegResources();
+    void ReleaseCallResources();
+
 
 private slots:
 
@@ -115,6 +120,8 @@ private slots:
     void on_call_clicked();
 
     void on_disconnect_clicked();
+
+    void on_connect_clicked();
 
 private:
     Ui::MainWindow *ui;

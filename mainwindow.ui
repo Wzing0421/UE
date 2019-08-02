@@ -17,8 +17,8 @@
    <widget class="QPushButton" name="start">
     <property name="geometry">
      <rect>
-      <x>110</x>
-      <y>130</y>
+      <x>60</x>
+      <y>60</y>
       <width>91</width>
       <height>111</height>
      </rect>
@@ -30,9 +30,9 @@
    <widget class="QPushButton" name="DeReigster">
     <property name="geometry">
      <rect>
-      <x>220</x>
-      <y>130</y>
-      <width>91</width>
+      <x>250</x>
+      <y>60</y>
+      <width>101</width>
       <height>111</height>
      </rect>
     </property>
@@ -44,8 +44,8 @@
     <property name="geometry">
      <rect>
       <x>110</x>
-      <y>330</y>
-      <width>91</width>
+      <y>240</y>
+      <width>191</width>
       <height>91</height>
      </rect>
     </property>
@@ -56,14 +56,27 @@
    <widget class="QPushButton" name="disconnect">
     <property name="geometry">
      <rect>
-      <x>220</x>
-      <y>330</y>
+      <x>240</x>
+      <y>370</y>
       <width>100</width>
       <height>91</height>
      </rect>
     </property>
     <property name="text">
      <string>结束通话</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="connect">
+    <property name="geometry">
+     <rect>
+      <x>60</x>
+      <y>370</y>
+      <width>100</width>
+      <height>91</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>接听</string>
     </property>
    </widget>
   </widget>

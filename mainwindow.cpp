@@ -1,5 +1,6 @@
 /*7月30日更新日志：把UE主叫与主叫的定时器写好了，下一步完善被叫的逻辑和定时器*/
 /*完成情况：把UE的被叫完成了，没用完成测试，明天完成UE被叫的测试以及PCC服务器对于被叫的测试*/
+/*7月31日更新日志：把6.2.2.3之前写完了（不包含）*/
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
@@ -16,12 +17,19 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->DeReigster->setDisabled(true);
     ui->call->setDisabled(true);
     ui->disconnect->setDisabled(true);
+    ui->connect->setDisabled(true);
+
+    ui->DeReigster->setVisible(false);
+    ui->call->setVisible(false);
+    ui->disconnect->setVisible(false);
+    ui->connect->setVisible(false);
 
     registerstate = UNREGISTERED;//初始化成未注册的
     regRecvPort = 10002;//本机接收注册信息的绑定端口
     regsendPort = 5000;//发送注册信息的目的端口
     Resendcnt = 0;//设定重发次数初始化为0,当加到2的时候还没有回复，则注册失败
     Resend_au_cnt = 0; //设定重发鉴权注册次数，初始化为0,当加到2的时候还没有回复，则注册失败
+    Resend_DeReg_cnt = 0; //设定注销重发次数，初始化为0,当加到2的时候还没有回复，则注册失败
     CallConnectcnt = 0;//设定call connect册次数，初始化为0
     CallDisconnectcnt = 0;//设定call connect册次数，初始化为0
 
@@ -93,6 +101,7 @@ void MainWindow::on_start_clicked()
     qDebug()<<"start button clicked";
     ui->start->setText("正在注册");
     ui->start->setDisabled(true);
+    ui->start->setVisible(false);
     //这里开始的是第一次计时，等待的是PCC回复的authrization command
     regtimer->start(5000);
     int num=sendSocket->writeDatagram((char*)sc2_regMsg,sizeof(sc2_regMsg),PCCaddr,regsendPort);//num返回成功发送的字节数量
@@ -137,38 +146,27 @@ void MainWindow::recvRegInfo(){
             ui->start->setDisabled(true);
             ui->DeReigster->setDisabled(false);
             ui->call->setDisabled(false);
+
+            ui->start->setVisible(false);
+            ui->DeReigster->setVisible(true);
+            ui->call->setVisible(true);
         }
         else if(judge == 0x04  && registerstate == REGISTERED){//收到从PCC端来的voice DeRegister Req 应该终止业务
             ui->start->setText("开机注册");
             qDebug()<<"收到PCC 发送的voice DeRegister Req,需要重新注册！";
-            registerstate = UNREGISTERED;//需要重新注册
-            callstate = U0;
-            Resendcnt = 0;
-            Resend_au_cnt = 0;
-            CallConnectcnt = 0;
-            CallDisconnectcnt = 0;
 
             int num=sendSocket->writeDatagram((char*)sc2_voiceDeRegisterRsp,sizeof(sc2_voiceDeRegisterRsp),PCCaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"发送voice DeRegister Rsp，长度为 "<<num<<" 字节";
-            ui->start->setDisabled(false);
-            ui->DeReigster->setDisabled(true);
-            ui->call->setDisabled(true);
-            ui->disconnect->setDisabled(true);
 
+            /*释放呼叫资源*/
+            ReleaseRegResources();
         }
         else if(judge == 0x05  && registerstate == REGISTERED){//收到从PCC端来的voice DeRegister Rsp 可以终止业务
             ui->start->setText("开机注册");
             qDebug()<<"收到PCC 发送的voice DeRegister Rsp回应，注销成功！";
-            registerstate = UNREGISTERED;
-            callstate = U0;
-            Resendcnt = 0;
-            Resend_au_cnt = 0;
-            CallConnectcnt = 0;
-            CallDisconnectcnt = 0;
-            ui->start->setDisabled(false);
-            ui->DeReigster->setDisabled(true);
-            ui->call->setDisabled(true);
-            ui->disconnect->setDisabled(true);
+
+            /*释放呼叫资源*/
+            ReleaseRegResources();
 
         }
         else if(judge == 0x06 && callstate == U0 && registerstate == REGISTERED){//这是被叫的状态转移
@@ -192,12 +190,14 @@ void MainWindow::recvRegInfo(){
             qDebug()<<"发送call alerting，长度为 "<<num<<" 字节";
             callstate = U7;//呼叫接受态
 
-            //等待接听
-            QThread::sleep(2);
-            calltimerT9014->start(5000);
-            callstate = U8;//呼叫连接请求态
-            num=sendSocket->writeDatagram((char*)sc2_callConnect,sizeof(sc2_callConnect),PCCaddr,regsendPort);
-            qDebug()<<"发送call connect，长度为 "<<num<<" 字节";
+            /*拒绝和接听都是可以的*/
+            ui->call->setDisabled(true);
+            ui->disconnect->setText("拒绝接听");
+            ui->disconnect->setDisabled(false);
+            ui->connect->setDisabled(false);
+
+            ui->disconnect->setVisible(true);
+            ui->connect->setVisible(true);
 
         }
         else if(judge == 0x07 && callstate == U1){
@@ -225,6 +225,8 @@ void MainWindow::recvRegInfo(){
             if(calltimerT9005->isActive()) calltimerT9005->stop();
 
             ui->disconnect->setDisabled(false);//这个时候如果在响铃的时候也是可以结束呼叫的
+            ui->disconnect->setVisible(true);
+
             calltimerT9007->start(30000);
         }
         else if(judge == 0x09 && (callstate == U4 || callstate == U3)){
@@ -237,6 +239,8 @@ void MainWindow::recvRegInfo(){
             qDebug()<<"主叫建立成功！ 发送call connect ack，长度为 "<<num<<" 字节";
 
             ui->call->setDisabled(true);
+            ui->disconnect->setVisible(true);
+
         }
         else if(judge == 0x0a && callstate == U8){
             qDebug()<<"收到call connect ack,通话建立成功";
@@ -246,7 +250,10 @@ void MainWindow::recvRegInfo(){
             CallConnectcnt = 0;
             CallDisconnectcnt = 0;
             ui->call->setDisabled(true);
+            ui->disconnect->setText("结束通话");
             ui->disconnect->setDisabled(false);
+            ui->disconnect->setVisible(true);
+
             /*就可以开启语音发送线程*/
 
         }
@@ -255,22 +262,21 @@ void MainWindow::recvRegInfo(){
             qDebug()<<"收到call Release Req,原因索引是： "<<cause<<" ,释放资源";
 
             /*P15页UE取消呼叫或者是P16页被叫UE没接听或者PCC拒绝呼叫，则不需要杀掉语音进程，否则P15页UE挂机则需要杀掉语音进程，根据呼叫状态区分即可*/
+            if(callstate == U10){
+                //杀掉语音进程
+            }
 
-
-            callstate = U0;
             calltimerT9009->stop();
-            /*从严谨起见，应该把所有的计时器都停下，虽然理论上只有T9009在运行*/
-            if(calltimerT9005->isActive()) calltimerT9005->stop();
-            if(calltimerT9006->isActive()) calltimerT9006->stop();
-            if(calltimerT9007->isActive()) calltimerT9007->stop();
-            if(calltimerT9014->isActive()) calltimerT9014->stop();
+
+            /*释放资源*/
+            ReleaseCallResources();
+
             int num=sendSocket->writeDatagram((char*)sc2_callReleaseRsp,sizeof(sc2_callReleaseRsp),PCCaddr,regsendPort);//发送callReleaseRsp
             qDebug()<<"发送call Release Rsp: "<<num<<" 字节";
             qDebug()<<"-------结束呼叫--------";
-            ui->call->setDisabled(false);
-            ui->disconnect->setDisabled(true);
-            CallConnectcnt = 0;
-            CallDisconnectcnt = 0;
+
+            ui->disconnect->setText("结束通话");
+
         }
         //char * strJudge=datagram.data();//把QByteArray转换成char *
     }
@@ -542,18 +548,10 @@ void MainWindow::proc_timeout(){
             qDebug()<<"第 "<<Resendcnt<<" 次数重发 初始 注册消息，长度为 "<<num<<" 字节";
         }
         else{
-            //状态清零，计数器也清零
-            Resendcnt = 0;
-            Resend_au_cnt = 0;
-            CallConnectcnt = 0;
-            CallDisconnectcnt = 0;
-            registerstate = UNREGISTERED;
-            callstate = U0;
             ui->start->setText("开机注册");
             qDebug()<<"第一次注册没用收到authorization command,请点击开机注册按钮重试！";
-            ui->start->setDisabled(false);
-            ui->DeReigster->setDisabled(true);
-            ui->call->setDisabled(true);
+
+            ReleaseRegResources();
         }
     }
     else if(registerstate == AUTH_PROC){//这说明是鉴权注册超时了
@@ -561,34 +559,31 @@ void MainWindow::proc_timeout(){
             Resend_au_cnt++;
             regtimer->start(5000);
             int num=sendSocket->writeDatagram((char*)sc2_regMsg,sizeof(sc2_regMsg),PCCaddr,regsendPort);//num返回成功发送的字节数量
-            qDebug()<<"第 "<<Resendcnt<<" 次数重发 鉴权 注册消息，长度为 "<<num<<" 字节";
+            qDebug()<<"第 "<<Resend_au_cnt<<" 次数重发 鉴权 注册消息，长度为 "<<num<<" 字节";
         }
         else{
-            Resendcnt = 0;
-            Resend_au_cnt = 0;
-            CallConnectcnt = 0;
-            CallDisconnectcnt = 0;
-            registerstate = UNREGISTERED;
-            callstate = U0;
             ui->start->setText("开机注册");
             qDebug()<<"鉴权注册没有收到 voice register rsp, 请点击开机注册按钮重试！";
-            ui->start->setDisabled(false);
-            ui->DeReigster->setDisabled(true);
-            ui->call->setDisabled(true);
+
+            ReleaseRegResources();
         }
     }
     else if(registerstate == REGISTERED){//UE注销超时
-        registerstate = UNREGISTERED;
-        callstate = U0;
-        Resendcnt = 0;
-        Resend_au_cnt = 0;
-        CallConnectcnt = 0;
-        CallDisconnectcnt = 0;
-        ui->start->setText("开机注册");
-        qDebug()<<"UE注销超时，自动注销！";
-        ui->start->setDisabled(false);
-        ui->DeReigster->setDisabled(true);
-        ui->call->setDisabled(true);
+        if(Resend_DeReg_cnt <=1){
+            Resend_DeReg_cnt++;
+            regtimer->start(5000);
+            int num=sendSocket->writeDatagram((char*)sc2_voiceDeRegisterReq,sizeof(sc2_voiceDeRegisterReq),PCCaddr,regsendPort);//num返回成功发送的字节数量
+            qDebug()<<"第 "<<Resend_DeReg_cnt<<" 次数重发 注销 消息，长度为 "<<num<<" 字节";
+        }
+        else{
+
+            ReleaseRegResources();
+            ui->start->setText("开机注册");
+            qDebug()<<"UE注销超时，自动注销！";
+
+        }
+
+
     }
 
 }
@@ -676,11 +671,7 @@ void MainWindow::call_timeoutT9009(){//call disconnect超时处理,只重发一�
     }
     else{
         qDebug()<<"call disconnect 重发超过一次,清空呼叫资源";
-        callstate = U0;
-        CallConnectcnt = 0;
-        CallDisconnectcnt = 0;
-        ui->call->setDisabled(false);
-        ui->disconnect->setDisabled(true);
+        ReleaseCallResources();
     }
 
 }
@@ -709,10 +700,52 @@ void MainWindow::call_timeoutT9014(){//call connect超时处理
         qDebug()<<"call connect 2次超时之后重新发送call disconnect！";
     }
 }
+void MainWindow::ReleaseRegResources(){//释放注册资源
+
+    registerstate = UNREGISTERED;
+    callstate = U0;
+    Resendcnt = 0;
+    Resend_au_cnt = 0;
+    Resend_DeReg_cnt = 0;
+    CallConnectcnt = 0;
+    CallDisconnectcnt = 0;
+    ui->start->setDisabled(false);
+    ui->DeReigster->setDisabled(true);
+    ui->call->setDisabled(true);
+    ui->disconnect->setDisabled(true);
+    ui->connect->setDisabled(true);
+
+    ui->start->setVisible(true);
+    ui->DeReigster->setVisible(false);
+    ui->call->setVisible(false);
+    ui->disconnect->setVisible(false);
+    ui->connect->setVisible(false);
+
+}
+void MainWindow::ReleaseCallResources(){//释放呼叫资源
+
+    callstate = U0;
+    CallConnectcnt = 0;
+    CallDisconnectcnt = 0;
+
+    if(calltimerT9005->isActive()) calltimerT9005->stop();
+    if(calltimerT9006->isActive()) calltimerT9006->stop();
+    if(calltimerT9007->isActive()) calltimerT9007->stop();
+    if(calltimerT9009->isActive()) calltimerT9009->stop();
+    if(calltimerT9014->isActive()) calltimerT9014->stop();
+
+    ui->call->setDisabled(false);
+    ui->disconnect->setDisabled(true);
+    ui->connect->setDisabled(true);
+
+    ui->disconnect->setVisible(false);
+    ui->connect->setVisible(false);
+
+}
 
 void MainWindow::on_disconnect_clicked()//主叫或者被叫的结束通话按钮
 {
-    ui->call->setDisabled(false);
+
     ui->disconnect->setDisabled(true);
 
     if(callstate == U4){//这种情况是在响铃的时候主叫点击了disconnect按钮
@@ -736,8 +769,34 @@ void MainWindow::on_disconnect_clicked()//主叫或者被叫的结束通话按�
         /*终止语音线程，并且还有填写disconnect 的cause是 用户挂机*/
         //进入资源释放态
         callstate = U19;
+        int cause = 27;//原因是1B 呼叫正常释放
+        memcpy(sc2_callDisconnect+15,(char*)&cause,1);
         sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
         qDebug()<<"UE 正常用户挂机，发送call Disconnect!";
     }
+    else if(callstate == U7){//被叫在响铃的时候拒绝接听
 
+        //启动T9009定时器，关闭T9007定时器
+        CallDisconnectcnt = 0;
+        if(calltimerT9007->isActive()) calltimerT9007->stop();
+        calltimerT9009->start(5000);
+
+        //进入资源释放态
+        callstate = U19;
+        int cause = 26;//原因是1A 被叫用户拒绝接听
+        memcpy(sc2_callDisconnect+15,(char*)&cause,1);
+        sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
+        qDebug()<<"被叫在响铃期间拒绝接听，释放资源";
+
+    }
+
+}
+
+void MainWindow::on_connect_clicked()//UE被叫的时候点击接听按钮
+{
+    ui->connect->setDisabled(true);
+    calltimerT9014->start(5000);
+    callstate = U8;//呼叫连接请求态
+    int num=sendSocket->writeDatagram((char*)sc2_callConnect,sizeof(sc2_callConnect),PCCaddr,regsendPort);
+    qDebug()<<"UE被叫接听，发送call connect，长度为 "<<num<<" 字节";
 }
