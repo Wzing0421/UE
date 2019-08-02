@@ -702,6 +702,8 @@ void MainWindow::call_timeoutT9014(){//call connect超时处理
 }
 void MainWindow::ReleaseRegResources(){//释放注册资源
 
+    if(regtimer->isActive()) regtimer->stop();
+
     registerstate = UNREGISTERED;
     callstate = U0;
     Resendcnt = 0;
