@@ -36,7 +36,7 @@ public:
     QUdpSocket *sendSocket;//用于发送注册信息的socket
     quint16 regRecvPort;//接收注册信息用的端口
     quint16 regsendPort;//向PCC发送注册信息的目的端口
-    QHostAddress PCCaddr;//PCC的IP地址
+    QHostAddress Ancaddr;//PCC的IP地址
     quint32 localip; //本机IP地址
 
     QTimer *regtimer;

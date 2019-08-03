@@ -26,14 +26,14 @@ MainWindow::MainWindow(QWidget *parent) :
 
     registerstate = UNREGISTERED;//初始化成未注册的
     regRecvPort = 10002;//本机接收注册信息的绑定端口
-    regsendPort = 5000;//发送注册信息的目的端口
+    regsendPort = 50001;//发送注册信息的目的端口
     Resendcnt = 0;//设定重发次数初始化为0,当加到2的时候还没有回复，则注册失败
     Resend_au_cnt = 0; //设定重发鉴权注册次数，初始化为0,当加到2的时候还没有回复，则注册失败
     Resend_DeReg_cnt = 0; //设定注销重发次数，初始化为0,当加到2的时候还没有回复，则注册失败
     CallConnectcnt = 0;//设定call connect册次数，初始化为0
     CallDisconnectcnt = 0;//设定call connect册次数，初始化为0
 
-    PCCaddr.setAddress("162.105.85.198");//设置PCC的IP
+    Ancaddr.setAddress("162.105.85.235");//设置Anc的IP
     localip = getlocalIP();//获得本机的IP
     qDebug()<<localip;
 
@@ -43,7 +43,7 @@ MainWindow::MainWindow(QWidget *parent) :
     init_voiceDeRegisterRsp();//初始化 DeRegister Rsp
     init_voiceDeRegisterReq();//初始化 DeRegister Req
 
-    init_sc2();//初始化sc2头
+    //init_sc2();//初始化sc2头
 
     callstate = U0;
     /*初始化呼叫信令*/
@@ -104,7 +104,7 @@ void MainWindow::on_start_clicked()
     ui->start->setVisible(false);
     //这里开始的是第一次计时，等待的是PCC回复的authrization command
     regtimer->start(5000);
-    int num=sendSocket->writeDatagram((char*)sc2_regMsg,sizeof(sc2_regMsg),PCCaddr,regsendPort);//num返回成功发送的字节数量
+    int num=sendSocket->writeDatagram((char*)regMsg,sizeof(regMsg),Ancaddr,regsendPort);//num返回成功发送的字节数量
     qDebug()<<"发送初始注册消息，长度为 "<<num<<" 字节";
 
 
@@ -119,7 +119,17 @@ void MainWindow::recvRegInfo(){
 
         if(regtimer->isActive()) regtimer->stop();
 
-        char judge = datagram[2];
+        int recvlen = 0;//sci头的第7 8字节是净负荷的长度,注意大端
+        recvlen = recvlen | datagram[6];
+        recvlen = recvlen << 8;
+        recvlen = recvlen | datagram[7];
+        qDebug()<<"收到的净负荷长度是： "<<recvlen;
+
+        char *recvbuf = new char[recvlen];
+        char* str = datagram.data();
+        memcpy(recvbuf,str+8,recvlen);
+
+        char judge = *(recvbuf+2);
         /*这里面涉及到接收到包之后复制的地方还需要改，不是说加了sc2头之后仅仅吧索引从2变成10就可以了*/
         if(judge == 0x02 && registerstate == UNREGISTERED){//说明是authorization command
             qDebug()<<"收到authorization command！";
@@ -131,11 +141,11 @@ void MainWindow::recvRegInfo(){
             QByteArray str = QCryptographicHash::hash(word,QCryptographicHash::Md5);
 
             //16byte长度，或者可以理解成32位BCD码组成
-            memcpy(sc2_regMsg_au + 21 + sizeof(SC2_header), (char*)&str, 16);
+            memcpy(regMsg_au + 21, (char*)&str, 16);
 
             //再次发送带有鉴权的注册消息
             regtimer->start(5000);
-            int num=sendSocket->writeDatagram((char*)sc2_regMsg_au,sizeof(sc2_regMsg_au),PCCaddr,regsendPort);//num返回成功发送的字节数量
+            int num=sendSocket->writeDatagram((char*)regMsg_au,sizeof(regMsg_au),Ancaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"发送带有鉴权的注册消息，长度为 "<<num<<" 字节";
         }
         else if(judge == 0x03 && registerstate == AUTH_PROC){//说明是voice register rsp
@@ -155,7 +165,7 @@ void MainWindow::recvRegInfo(){
             ui->start->setText("开机注册");
             qDebug()<<"收到PCC 发送的voice DeRegister Req,需要重新注册！";
 
-            int num=sendSocket->writeDatagram((char*)sc2_voiceDeRegisterRsp,sizeof(sc2_voiceDeRegisterRsp),PCCaddr,regsendPort);//num返回成功发送的字节数量
+            int num=sendSocket->writeDatagram((char*)voiceDeRegisterRsp,sizeof(voiceDeRegisterRsp),Ancaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"发送voice DeRegister Rsp，长度为 "<<num<<" 字节";
 
             /*释放呼叫资源*/
@@ -174,19 +184,20 @@ void MainWindow::recvRegInfo(){
             qDebug()<<"收到call setup";
 
             callstate = U6;//呼叫发现态
-            char *str = datagram.data();
-            memcpy(sc2_callSetupAck+11,str+3,4);
-            memcpy(sc2_callAllerting+11,str+3,4);
-            memcpy(sc2_callConnect+11,str+3,4);
-            memcpy(sc2_callDisconnect+11,str+3,4);
-            memcpy(sc2_callReleaseRsp+11,str+3,4);
+
+            /*这里可能要修改，因为接收到的也需要加上sc2头*/
+            memcpy(callSetupAck+3,recvbuf+3,4);
+            memcpy(callAllerting+3,recvbuf+3,4);
+            memcpy(callConnect+3,recvbuf+3,4);
+            memcpy(callDisconnect+3,recvbuf+3,4);
+            memcpy(callReleaseRsp+3,recvbuf+3,4);
 
 
-            int num=sendSocket->writeDatagram((char*)sc2_callSetupAck,sizeof(sc2_callSetupAck),PCCaddr,regsendPort);
+            int num=sendSocket->writeDatagram((char*)callSetupAck,sizeof(callSetupAck),Ancaddr,regsendPort);
             qDebug()<<"发送call setup ack，长度为 "<<num<<" 字节";
             callstate = U9;//呼叫确认态
 
-            num=sendSocket->writeDatagram((char*)sc2_callAllerting,sizeof(sc2_callAllerting),PCCaddr,regsendPort);
+            num=sendSocket->writeDatagram((char*)callAllerting,sizeof(callAllerting),Ancaddr,regsendPort);
             qDebug()<<"发送call alerting，长度为 "<<num<<" 字节";
             callstate = U7;//呼叫接受态
 
@@ -207,12 +218,10 @@ void MainWindow::recvRegInfo(){
             calltimerT9005 ->stop();
             /*理论上这里受到的从PCC发过来的call setup ack里面有PCC分配的call ID信息*/
             /*主叫只需要发送call connect ack所以只初始化这个*/
-            char *str = datagram.data();
 
-            /*这里可能要修改，因为接收到的也需要加上sc2头*/
-            memcpy(sc2_callConnectAck+11,str+3,4);
-            memcpy(sc2_callDisconnect+11,str+3,4);
-            memcpy(sc2_callReleaseRsp+11, str+3,4);
+            memcpy(callConnectAck+3,recvbuf+3,4);
+            memcpy(callDisconnect+3,recvbuf+3,4);
+            memcpy(callReleaseRsp+3,recvbuf+3,4);
 
             //这个定时器用于等待call alerting
             calltimerT9006 ->start(5000);
@@ -235,7 +244,7 @@ void MainWindow::recvRegInfo(){
             calltimerT9007->stop();
             if(calltimerT9005->isActive()) calltimerT9005->stop();
             if(calltimerT9006->isActive()) calltimerT9006->stop();
-            int num=sendSocket->writeDatagram((char*)sc2_callConnectAck,sizeof(sc2_callConnectAck),PCCaddr,regsendPort);//num返回成功发送的字节数量
+            int num=sendSocket->writeDatagram((char*)callConnectAck,sizeof(callConnectAck),Ancaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"主叫建立成功！ 发送call connect ack，长度为 "<<num<<" 字节";
 
             ui->call->setDisabled(true);
@@ -271,7 +280,7 @@ void MainWindow::recvRegInfo(){
             /*释放资源*/
             ReleaseCallResources();
 
-            int num=sendSocket->writeDatagram((char*)sc2_callReleaseRsp,sizeof(sc2_callReleaseRsp),PCCaddr,regsendPort);//发送callReleaseRsp
+            int num=sendSocket->writeDatagram((char*)callReleaseRsp,sizeof(callReleaseRsp),Ancaddr,regsendPort);//发送callReleaseRsp
             qDebug()<<"发送call Release Rsp: "<<num<<" 字节";
             qDebug()<<"-------结束呼叫--------";
 
@@ -342,29 +351,15 @@ void MainWindow::init_regMsg(QString QIMSIstr){
         uint32_t IPnum = htonl(localip);//转换成大端模式
         memcpy(regMsg+17,(char*) &IPnum, 4);
 
-        //加上sc2头
+        memcpy(regMsg_au,regMsg,21);
+
+        //加上sc2头.现在不需要了
+        /*
         short len = htons(sizeof(regMsg));
         memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_regMsg,SC2_header,sizeof(SC2_header)); memcpy(sc2_regMsg+sizeof(SC2_header), regMsg, sizeof(regMsg));
 
-        memcpy(regMsg_au,regMsg,21);
         len = htons(sizeof(regMsg_au));
         memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_regMsg_au,SC2_header,sizeof(SC2_header)); memcpy(sc2_regMsg_au+sizeof(SC2_header), regMsg_au, sizeof(regMsg_au));
-
-        /*
-        if (regMsg[0] == 0x00) qDebug() << "yes0";
-        if (regMsg[1] == 0x15) qDebug()<< "yes1" ;
-        if (regMsg[2] == 0x01) qDebug()<< "yes2" ;
-        if (regMsg[3] == 0x00) qDebug()<< "yes3" ;
-        if (regMsg[4] == 0x00) qDebug()<< "yes4" ;
-        if (regMsg[5] == 0x00) qDebug()<< "yes5" ;
-        if (regMsg[6] == 0x00) qDebug()<< "yes6" ;
-        if (regMsg[7] == 0x00) qDebug() << "yes7" ;
-
-        //for(int i=0;i<8;i++) qDebug()<<((regMsg[17]>>i) &(0x01));
-        if (int(regMsg[17]) == 198) qDebug()<< "yes17" ;
-        if (int(regMsg[18]) == 85) qDebug()<< "yes18" ;
-        if (int(regMsg[19]) == 105) qDebug()<< "yes19" ;
-        if (int(regMsg[20]) == 162) qDebug() << "yes20" ;
         */
 }
 
@@ -407,8 +402,10 @@ void MainWindow::init_voiceDeRegisterReq(){//初始化DeRegisterReq
     voiceDeRegisterReq[8] = 0x03;//cause 0x03表示的是UE 侧的注销请求
     voiceDeRegisterReq[9] = 0x10;//UE关机注销
 
+    /*
     short len = htons(sizeof(voiceDeRegisterReq));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_voiceDeRegisterReq,SC2_header,sizeof(SC2_header)); memcpy(sc2_voiceDeRegisterReq+sizeof(SC2_header), voiceDeRegisterReq, sizeof(voiceDeRegisterReq));
+    */
 }
 
 void MainWindow::init_voiceDeRegisterRsp(){
@@ -417,12 +414,13 @@ void MainWindow::init_voiceDeRegisterRsp(){
     voiceDeRegisterRsp[1] = 0x08;//message length
     voiceDeRegisterRsp[2] = 0x05;//message type
     //后面5个字节的STMSI目前就是0，是和前面RegMsg是一样的
-
+    /*
     short len = htons(sizeof(voiceDeRegisterRsp));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_voiceDeRegisterRsp,SC2_header,sizeof(SC2_header)); memcpy(sc2_voiceDeRegisterRsp+sizeof(SC2_header), voiceDeRegisterRsp, sizeof(voiceDeRegisterRsp));
+    */
 }
 
-void MainWindow::init_sc2(){
+void MainWindow::init_sc2(){//这个函数不需要了
     memset(SC2_header,0,sizeof(SC2_header));
     //前5个字节是UEID
     SC2_header[5] = 0x00;//信令方向00为上行
@@ -461,10 +459,10 @@ void MainWindow::init_callSetup(string calledBCDNumber){
         nums[i] = nums[i] | num2c;
     }
     memcpy(callSetup+15,nums,6);
-
+    /*
     short len = htons(sizeof(callSetup));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callSetup,SC2_header,sizeof(SC2_header)); memcpy(sc2_callSetup+sizeof(SC2_header), callSetup, sizeof(callSetup));
-
+    */
 }
 
 void MainWindow::init_callSetupAck(){
@@ -472,9 +470,10 @@ void MainWindow::init_callSetupAck(){
     callSetupAck[1] = 0x07;//message length
     callSetupAck[2] = 0x07;//message type
     //后面的需要memcpy以下从PCC发送来的call ID
-
+    /*
     short len = htons(sizeof(callSetupAck));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callSetupAck,SC2_header,sizeof(SC2_header)); memcpy(sc2_callSetupAck+sizeof(SC2_header), callSetupAck, sizeof(callSetupAck));
+    */
 }
 
 void MainWindow::init_callAlerting(){
@@ -483,8 +482,10 @@ void MainWindow::init_callAlerting(){
     callAllerting[2] = 0x08;//message type
     //后面的需要memcpy以下从PCC发送来的call ID
 
+    /*
     short len = htons(sizeof(callAllerting));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callAllerting,SC2_header,sizeof(SC2_header)); memcpy(sc2_callAllerting+sizeof(SC2_header), callAllerting, sizeof(callAllerting));
+    */
 }
 
 void MainWindow::init_callConnect(){
@@ -494,8 +495,10 @@ void MainWindow::init_callConnect(){
     //后面的需要memcpy以下从PCC发送来的call ID
     callConnect[7] = 0x01;//call type
 
+    /*
     short len = htons(sizeof(callConnect));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callConnect,SC2_header,sizeof(SC2_header)); memcpy(sc2_callConnect+sizeof(SC2_header), callConnect, sizeof(callConnect));
+    */
 }
 
 void MainWindow::init_callConnectAck(){
@@ -504,8 +507,10 @@ void MainWindow::init_callConnectAck(){
     callConnectAck[2] = 0x0a;//message type
     //后面的需要memcpy以下从PCC发送来的call ID
 
+    /*
     short len = htons(sizeof(callConnectAck));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callConnectAck,SC2_header,sizeof(SC2_header)); memcpy(sc2_callConnectAck+sizeof(SC2_header), callConnectAck, sizeof(callConnectAck));
+    */
 }
 
 void MainWindow::init_callDisconnect(int cause){
@@ -517,9 +522,10 @@ void MainWindow::init_callDisconnect(int cause){
 
     callDisconnect[8] = char(cause);//casue
 
+    /*
     short len = htons(sizeof(callDisconnect));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callDisconnect,SC2_header,sizeof(SC2_header)); memcpy(sc2_callDisconnect+sizeof(SC2_header), callDisconnect, sizeof(callDisconnect));
-
+    */
 }
 
 void MainWindow::init_callReleaseRsp(int cause){
@@ -531,8 +537,10 @@ void MainWindow::init_callReleaseRsp(int cause){
 
     callReleaseRsp[8] = char(cause);//casue
 
+    /*
     short len = htons(sizeof(callReleaseRsp));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callReleaseRsp,SC2_header,sizeof(SC2_header)); memcpy(sc2_callReleaseRsp+sizeof(SC2_header), callReleaseRsp, sizeof(callReleaseRsp));
+    */
 }
 /*上面都是初始化信令*/
 void MainWindow::proc_timeout(){
@@ -543,7 +551,7 @@ void MainWindow::proc_timeout(){
         if(Resendcnt <=1){
             Resendcnt++;
             regtimer->start(5000);
-            int num=sendSocket->writeDatagram((char*)sc2_regMsg,sizeof(sc2_regMsg),PCCaddr,regsendPort);//num返回成功发送的字节数量
+            int num=sendSocket->writeDatagram((char*)regMsg,sizeof(regMsg),Ancaddr,regsendPort);//num返回成功发送的字节数量
 
             qDebug()<<"第 "<<Resendcnt<<" 次数重发 初始 注册消息，长度为 "<<num<<" 字节";
         }
@@ -558,7 +566,7 @@ void MainWindow::proc_timeout(){
         if(Resend_au_cnt <=1){
             Resend_au_cnt++;
             regtimer->start(5000);
-            int num=sendSocket->writeDatagram((char*)sc2_regMsg,sizeof(sc2_regMsg),PCCaddr,regsendPort);//num返回成功发送的字节数量
+            int num=sendSocket->writeDatagram((char*)regMsg,sizeof(regMsg),Ancaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"第 "<<Resend_au_cnt<<" 次数重发 鉴权 注册消息，长度为 "<<num<<" 字节";
         }
         else{
@@ -572,7 +580,7 @@ void MainWindow::proc_timeout(){
         if(Resend_DeReg_cnt <=1){
             Resend_DeReg_cnt++;
             regtimer->start(5000);
-            int num=sendSocket->writeDatagram((char*)sc2_voiceDeRegisterReq,sizeof(sc2_voiceDeRegisterReq),PCCaddr,regsendPort);//num返回成功发送的字节数量
+            int num=sendSocket->writeDatagram((char*)voiceDeRegisterReq,sizeof(voiceDeRegisterReq),Ancaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"第 "<<Resend_DeReg_cnt<<" 次数重发 注销 消息，长度为 "<<num<<" 字节";
         }
         else{
@@ -595,7 +603,7 @@ void MainWindow::on_DeReigster_clicked()
     }
     ui->DeReigster->setDisabled(true);
     regtimer->start(5000);
-    int num=sendSocket->writeDatagram((char*)sc2_voiceDeRegisterReq,sizeof(sc2_voiceDeRegisterReq),PCCaddr,regsendPort);//num返回成功发送的字节数量
+    int num=sendSocket->writeDatagram((char*)voiceDeRegisterReq,sizeof(voiceDeRegisterReq),Ancaddr,regsendPort);//num返回成功发送的字节数量
     qDebug()<<"UE请求注销,长度: "<<num;
 }
 
@@ -616,7 +624,7 @@ void MainWindow::on_call_clicked()//呼叫按钮
     //发送呼叫建立信令
     calltimerT9005 -> start(5000);
     //UE -> PCC
-    int num=sendSocket->writeDatagram((char*)sc2_callSetup,sizeof(sc2_callSetup),PCCaddr,regsendPort);//num返回成功发送的字节数量
+    int num=sendSocket->writeDatagram((char*)callSetup,sizeof(callSetup),Ancaddr,regsendPort);//num返回成功发送的字节数量
     qDebug()<<"UE sends call setup,长度: "<<num;
     ui->call->setDisabled(true);
 
@@ -665,7 +673,7 @@ void MainWindow::call_timeoutT9009(){//call disconnect超时处理,只重发一�
     if(CallDisconnectcnt <=0){
         CallDisconnectcnt++;
         calltimerT9009->start(5000);
-        int num=sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
+        int num=sendSocket->writeDatagram((char*)callDisconnect,sizeof(callDisconnect),Ancaddr,regsendPort);
 
         qDebug()<<"第 "<<CallDisconnectcnt<<" 次数重发 call disconnect消息，长度为 "<<num<<" 字节";
     }
@@ -682,7 +690,7 @@ void MainWindow::call_timeoutT9014(){//call connect超时处理
     if(CallConnectcnt <=1){
         CallConnectcnt++;
         calltimerT9014->start(5000);
-        int num=sendSocket->writeDatagram((char*)sc2_callConnect,sizeof(sc2_callConnect),PCCaddr,regsendPort);
+        int num=sendSocket->writeDatagram((char*)callConnect,sizeof(callConnect),Ancaddr,regsendPort);
 
         qDebug()<<"第 "<<CallConnectcnt<<" 次数重发 call connect消息，长度为 "<<num<<" 字节";
     }
@@ -691,12 +699,12 @@ void MainWindow::call_timeoutT9014(){//call connect超时处理
         CallDisconnectcnt = 0;
         qDebug()<<"call connect 重发超过两次";
         int cause = 6;
-        memcpy(sc2_callDisconnect+15,(char*)&cause,1);
+        memcpy(callDisconnect+7,(char*)&cause,1);
 
         /*call connect2次超时之后重新发送call disconnect*/
         calltimerT9009->start(5000);
         callstate = U19;//进入资源释放态
-        sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
+        sendSocket->writeDatagram((char*)callDisconnect,sizeof(callDisconnect),Ancaddr,regsendPort);
         qDebug()<<"call connect 2次超时之后重新发送call disconnect！";
     }
 }
@@ -758,7 +766,7 @@ void MainWindow::on_disconnect_clicked()//主叫或者被叫的结束通话按�
 
         //进入资源释放态
         callstate = U19;
-        sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
+        sendSocket->writeDatagram((char*)callDisconnect,sizeof(callDisconnect),Ancaddr,regsendPort);
         qDebug()<<"主叫在响铃期间停止呼叫，发送call Disconnect!";
 
     }
@@ -772,8 +780,8 @@ void MainWindow::on_disconnect_clicked()//主叫或者被叫的结束通话按�
         //进入资源释放态
         callstate = U19;
         int cause = 27;//原因是1B 呼叫正常释放
-        memcpy(sc2_callDisconnect+15,(char*)&cause,1);
-        sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
+        memcpy(callDisconnect+7,(char*)&cause,1);
+        sendSocket->writeDatagram((char*)callDisconnect,sizeof(callDisconnect),Ancaddr,regsendPort);
         qDebug()<<"UE 正常用户挂机，发送call Disconnect!";
     }
     else if(callstate == U7){//被叫在响铃的时候拒绝接听
@@ -786,8 +794,8 @@ void MainWindow::on_disconnect_clicked()//主叫或者被叫的结束通话按�
         //进入资源释放态
         callstate = U19;
         int cause = 26;//原因是1A 被叫用户拒绝接听
-        memcpy(sc2_callDisconnect+15,(char*)&cause,1);
-        sendSocket->writeDatagram((char*)sc2_callDisconnect,sizeof(sc2_callDisconnect),PCCaddr,regsendPort);
+        memcpy(callDisconnect+7,(char*)&cause,1);
+        sendSocket->writeDatagram((char*)callDisconnect,sizeof(callDisconnect),Ancaddr,regsendPort);
         qDebug()<<"被叫在响铃期间拒绝接听，释放资源";
 
     }
@@ -799,6 +807,6 @@ void MainWindow::on_connect_clicked()//UE被叫的时候点击接听按钮
     ui->connect->setDisabled(true);
     calltimerT9014->start(5000);
     callstate = U8;//呼叫连接请求态
-    int num=sendSocket->writeDatagram((char*)sc2_callConnect,sizeof(sc2_callConnect),PCCaddr,regsendPort);
+    int num=sendSocket->writeDatagram((char*)callConnect,sizeof(callConnect),Ancaddr,regsendPort);
     qDebug()<<"UE被叫接听，发送call connect，长度为 "<<num<<" 字节";
 }
