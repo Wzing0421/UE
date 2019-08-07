@@ -11,12 +11,23 @@
 #include <QCryptographicHash>
 #include <QDebug>
 #include <QTimer>
+#include <QThread>
 #include <QtCore/QThread>
 
 #include <iostream>
 #include <arpa/inet.h>
 #include <string>
 #include <cstring>
+
+#include <QAudio>
+#include <QAudioFormat>
+#include <QAudioInput>
+#include <QAudioOutput>
+#include <QIODevice>
+
+#include "audioplaythread.h"
+#include "audiosendthread.h"
+
 using namespace std;
 
 namespace Ui {
@@ -30,7 +41,23 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
+/*
+    //for Audio
+    QUdpSocket *udpsocket;
 
+    struct video{
+        int lens;
+        char data[960];
+    };
+    QAudioOutput *output;
+    QIODevice *outputDevice;
+private slots:
+    void readyReadSlot();
+public:
+    //end for audio
+*/
+    AudioPlayThread aud;
+    audiosendthread audsend;
 
     QUdpSocket *regUdpSocket;//接收注册信息用的socket
     QUdpSocket *sendSocket;//用于发送注册信息的socket

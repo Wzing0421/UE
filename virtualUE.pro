@@ -6,6 +6,8 @@
 
 QT       += core gui
 QT       += network
+QT       += multimedia
+
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 TARGET = virtualUE
@@ -13,8 +15,12 @@ TEMPLATE = app
 
 
 SOURCES += main.cpp\
-        mainwindow.cpp
+        mainwindow.cpp \
+    audioplaythread.cpp \
+    audiosendthread.cpp
 
-HEADERS  += mainwindow.h
+HEADERS  += mainwindow.h \
+    audioplaythread.h \
+    audiosendthread.h
 
 FORMS    += mainwindow.ui

@@ -3,6 +3,7 @@
 /*7月31日更新日志：把6.2.2.3之前写完了（不包含）*/
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "audioplaythread.h"
 
 using namespace std;
 
@@ -86,7 +87,54 @@ MainWindow::MainWindow(QWidget *parent) :
     calltimerT9014 = new QTimer();
     connect(calltimerT9014,SIGNAL(timeout()),this,SLOT(call_timeoutT9014()));
 
+    /*
+    //for audio
+    udpsocket = new QUdpSocket(this);
+    udpsocket->bind(QHostAddress::Any,10004);
+    connect(udpsocket,SIGNAL(readyRead()),this,SLOT(readyReadSlot()));//收到网络数据报就开始往outputDevice写入，进行播放
+
+    QAudioFormat format;
+    format.setSampleRate(8000);
+    format.setChannelCount(1);
+    format.setSampleSize(16);
+    format.setCodec("audio/pcm");
+    format.setSampleType(QAudioFormat::SignedInt);
+    format.setByteOrder(QAudioFormat::LittleEndian);
+
+    output = new QAudioOutput(format,this);
+    output->setVolume(200);
+    outputDevice = output->start();//开始播放
+    QAudioDeviceInfo info(QAudioDeviceInfo::defaultInputDevice());
+    qDebug()<<info.deviceName()<<"----";
+
+    foreach (const QAudioDeviceInfo &deviceinfo, QAudioDeviceInfo::availableDevices(QAudio::AudioInput)) {
+        qDebug()<<"Device name: "<<deviceinfo.deviceName();
+    }
+    //end for audio*/
+
+    aud.setCurrentSampleInfo(8000,16,1);
+    aud.setCurrentVolumn(100);
+
+    audsend.setaudioformat(8000,1,16);
+
+    aud.start();
+
+    audsend.mystart();
+    //aud.run();
+
 }
+
+/*void MainWindow::readyReadSlot(){
+    while(udpsocket->hasPendingDatagrams()){
+            QHostAddress senderip;
+            quint16 senderport;
+            qDebug()<<"audio is being received..."<<endl;
+            video vp;
+            memset(&vp,0,sizeof(vp));
+            udpsocket->readDatagram((char*)&vp,sizeof(vp),&senderip,&senderport);
+            outputDevice->write(vp.data,vp.lens);
+    }
+}*/
 
 MainWindow::~MainWindow()
 {
