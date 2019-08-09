@@ -21,6 +21,7 @@ SOURCES += main.cpp\
 
 HEADERS  += mainwindow.h \
     audioplaythread.h \
-    audiosendthread.h
+    audiosendthread.h \
+    config.h
 
 FORMS    += mainwindow.ui

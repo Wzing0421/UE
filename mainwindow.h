@@ -27,6 +27,7 @@
 
 #include "audioplaythread.h"
 #include "audiosendthread.h"
+#include "config.h"
 
 using namespace std;
 
@@ -41,28 +42,14 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
-/*
-    //for Audio
-    QUdpSocket *udpsocket;
 
-    struct video{
-        int lens;
-        char data[960];
-    };
-    QAudioOutput *output;
-    QIODevice *outputDevice;
-private slots:
-    void readyReadSlot();
-public:
-    //end for audio
-*/
     AudioPlayThread aud;
     audiosendthread audsend;
 
     QUdpSocket *regUdpSocket;//接收注册信息用的socket
     QUdpSocket *sendSocket;//用于发送注册信息的socket
-    quint16 regRecvPort;//接收注册信息用的端口
-    quint16 regsendPort;//向PCC发送注册信息的目的端口
+    //quint16 regRecvPort;//接收注册信息用的端口
+    //quint16 regsendPort;//向PCC发送注册信息的目的端口
     QHostAddress Ancaddr;//PCC的IP地址
     quint32 localip; //本机IP地址
 
@@ -116,7 +103,7 @@ public:
     int CallConnectcnt; //用于记录call connect的重发次数
     int CallDisconnectcnt;
     /*以下是呼叫过程的初始化*/
-    void init_callSetup(string calledBCDNumber);
+    void init_callSetup();
     void init_callSetupAck();
     void init_callAlerting();
     void init_callConnect();
@@ -149,6 +136,10 @@ private slots:
     void on_disconnect_clicked();
 
     void on_connect_clicked();
+
+    void on_pushButton_clicked();
+
+    void on_pushButton_2_clicked();
 
 private:
     Ui::MainWindow *ui;

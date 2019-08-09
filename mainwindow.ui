@@ -43,10 +43,10 @@
    <widget class="QPushButton" name="call">
     <property name="geometry">
      <rect>
-      <x>110</x>
-      <y>240</y>
-      <width>191</width>
-      <height>91</height>
+      <x>290</x>
+      <y>300</y>
+      <width>71</width>
+      <height>31</height>
      </rect>
     </property>
     <property name="text">
@@ -56,8 +56,8 @@
    <widget class="QPushButton" name="disconnect">
     <property name="geometry">
      <rect>
-      <x>240</x>
-      <y>370</y>
+      <x>260</x>
+      <y>390</y>
       <width>100</width>
       <height>91</height>
      </rect>
@@ -70,13 +70,62 @@
     <property name="geometry">
      <rect>
       <x>60</x>
-      <y>370</y>
+      <y>390</y>
       <width>100</width>
       <height>91</height>
      </rect>
     </property>
     <property name="text">
      <string>接听</string>
+    </property>
+   </widget>
+   <widget class="QTextEdit" name="textEdit">
+    <property name="geometry">
+     <rect>
+      <x>60</x>
+      <y>299</y>
+      <width>211</width>
+      <height>31</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label">
+    <property name="geometry">
+     <rect>
+      <x>120</x>
+      <y>260</y>
+      <width>79</width>
+      <height>19</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>被叫号码</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton">
+    <property name="geometry">
+     <rect>
+      <x>50</x>
+      <y>570</y>
+      <width>100</width>
+      <height>27</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>开始</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_2">
+    <property name="geometry">
+     <rect>
+      <x>250</x>
+      <y>570</y>
+      <width>100</width>
+      <height>27</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>结束</string>
     </property>
    </widget>
   </widget>

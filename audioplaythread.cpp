@@ -6,8 +6,9 @@ AudioPlayThread::AudioPlayThread(QObject *parent)
     m_PCMDataBuffer.clear();
 
     udpsocket = new QUdpSocket(this);
-    udpsocket->bind(QHostAddress::Any,10004);
-    connect(udpsocket,SIGNAL(readyRead()),this,SLOT(readyReadSlot()));//收到网络数据报就开始往outputDevice写入，进行播放
+    //这个端口用于绑定被叫输出到输出音频设备的端口
+    udpsocket->bind(QHostAddress::Any,local_audio_port);
+    //connect(udpsocket,SIGNAL(readyRead()),this,SLOT(readyReadSlot()));//收到网络数据报就开始往outputDevice写入，进行播放
 }
 
 AudioPlayThread::~AudioPlayThread()
@@ -27,7 +28,6 @@ void AudioPlayThread::setCurrentSampleInfo(int sampleRate, int sampleSize, int c
     QMutexLocker locker(&m_Mutex);
 
     // Format
-    QAudioFormat nFormat;
     nFormat.setSampleRate(sampleRate);
     nFormat.setSampleSize(sampleSize);
     nFormat.setChannelCount(channelCount);
@@ -38,22 +38,27 @@ void AudioPlayThread::setCurrentSampleInfo(int sampleRate, int sampleSize, int c
     if (m_OutPut != nullptr) delete m_OutPut;
 
     m_OutPut = new QAudioOutput(nFormat);
-    m_AudioIo = m_OutPut->start();
-    //this->start();
+    m_AudioIo = m_OutPut->start();//原来放在setrcurrentinfo里面的
+
 }
 
 void AudioPlayThread::run(void)
 {
-    while (!this->isInterruptionRequested())
+    m_IsPlaying = true;
+    qDebug()<<"audio receiver starts!";
+
+    connect(udpsocket,&QUdpSocket::readyRead,this,&AudioPlayThread::readyReadSlot);//收到网络数据报就开始往outputDevice写入，进行播放
+
+    while (1)
     {
-        if (!m_IsPlaying)
+        QMutexLocker locker(&m_Mutex);
+        if (!m_IsPlaying)//用于终止线程
         {
             break;
         }
 
-        QMutexLocker locker(&m_Mutex);
-
         if(m_PCMDataBuffer.size() < m_CurrentPlayIndex + FRAME_LEN_60ms){//缓冲区不够播放60ms音频
+            //QThread::msleep(10);
             continue;
         }
         else{
@@ -73,8 +78,10 @@ void AudioPlayThread::run(void)
             }
         }
     }
-    m_PCMDataBuffer.clear();
-    qDebug()<<"audio receiver stop!";
+    disconnect(udpsocket,&QUdpSocket::readyRead,this,&AudioPlayThread::readyReadSlot);
+    //m_OutPut->stop();//这个地方也是新加上的
+    cleanAllAudioBuffer();
+    qDebug()<<"audio receiver stops!";
 }
 
 // 添加数据
@@ -98,19 +105,20 @@ void AudioPlayThread::readyReadSlot(){
     while(udpsocket->hasPendingDatagrams()){
             QHostAddress senderip;
             quint16 senderport;
-            qDebug()<<"audio is being received..."<<endl;
-            video vp;
-            memset(&vp,0,sizeof(vp));
-            udpsocket->readDatagram((char*)&vp,sizeof(vp),&senderip,&senderport);
+
+            //注意这里把头的长度从2改成12了
+            char recvbuf[FRAME_LEN_60ms+12];
+            memset(recvbuf,0,sizeof(recvbuf));
+            int num = udpsocket->readDatagram(recvbuf,FRAME_LEN_60ms+12,&senderip,&senderport);
+            qDebug()<<num;
             //outputDevice->write(vp.data,vp.lens);
-            addAudioBuffer(vp.data, vp.lens);
+            addAudioBuffer(recvbuf+12, FRAME_LEN_60ms);
+
     }
 }
 
 void AudioPlayThread::stop(){
-
-    udpsocket->close();
-    m_OutPut->stop();
-    cleanAllAudioBuffer();
+    QMutexLocker locker(&m_Mutex);
+    m_IsPlaying = false;
 }
 

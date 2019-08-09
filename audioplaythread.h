@@ -14,8 +14,7 @@
 #include <QNetworkInterface>
 #include <QDebug>
 
-#define MAX_AUDIO_LEN 960000 //如果接收缓冲区大于这个数值就剪掉
-#define FRAME_LEN_60ms 960 //每一个语音帧长度是960字节
+#include "config.h"
 class AudioPlayThread : public QThread
 {
     Q_OBJECT
@@ -46,6 +45,7 @@ public:
 private:
     QAudioOutput *m_OutPut = nullptr;
     QIODevice *m_AudioIo = nullptr;
+    QAudioFormat nFormat;
 
     QByteArray m_PCMDataBuffer;
     int m_CurrentPlayIndex = 0;
@@ -61,6 +61,8 @@ private:
         int lens;
         char data[960];
     };
+
+    char au_data[960];
 
 private slots:
     void readyReadSlot();

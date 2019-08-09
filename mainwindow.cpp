@@ -3,7 +3,6 @@
 /*7月31日更新日志：把6.2.2.3之前写完了（不包含）*/
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
-#include "audioplaythread.h"
 
 using namespace std;
 
@@ -19,24 +18,26 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->call->setDisabled(true);
     ui->disconnect->setDisabled(true);
     ui->connect->setDisabled(true);
+    ui->textEdit->setDisabled(true);
 
     ui->DeReigster->setVisible(false);
     ui->call->setVisible(false);
     ui->disconnect->setVisible(false);
     ui->connect->setVisible(false);
+    ui->textEdit->setVisible(false);
+    ui->label->setVisible(false);
 
     registerstate = UNREGISTERED;//初始化成未注册的
-    regRecvPort = 10002;//本机接收注册信息的绑定端口
-    regsendPort = 50001;//发送注册信息的目的端口
+    //regRecvPort = 10002;//本机接收注册信息的绑定端口
+    //regsendPort = 50001;//发送注册信息的目的端口
     Resendcnt = 0;//设定重发次数初始化为0,当加到2的时候还没有回复，则注册失败
     Resend_au_cnt = 0; //设定重发鉴权注册次数，初始化为0,当加到2的时候还没有回复，则注册失败
     Resend_DeReg_cnt = 0; //设定注销重发次数，初始化为0,当加到2的时候还没有回复，则注册失败
     CallConnectcnt = 0;//设定call connect册次数，初始化为0
     CallDisconnectcnt = 0;//设定call connect册次数，初始化为0
 
-    Ancaddr.setAddress("162.105.85.235");//设置Anc的IP
+    Ancaddr.setAddress(ANC_addr);//设置Anc的IP
     localip = getlocalIP();//获得本机的IP
-    qDebug()<<localip;
 
     /*初始化注册信令*/
     QString QIMSIstr = "460001357924680";
@@ -48,9 +49,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     callstate = U0;
     /*初始化呼叫信令*/
-    string calledBCDNumber = "15650709603";
-    init_callSetup(calledBCDNumber);
-
+    init_callSetup();
     init_callSetupAck();
     init_callAlerting();
     init_callConnect();
@@ -87,60 +86,27 @@ MainWindow::MainWindow(QWidget *parent) :
     calltimerT9014 = new QTimer();
     connect(calltimerT9014,SIGNAL(timeout()),this,SLOT(call_timeoutT9014()));
 
-    /*
-    //for audio
-    udpsocket = new QUdpSocket(this);
-    udpsocket->bind(QHostAddress::Any,10004);
-    connect(udpsocket,SIGNAL(readyRead()),this,SLOT(readyReadSlot()));//收到网络数据报就开始往outputDevice写入，进行播放
-
-    QAudioFormat format;
-    format.setSampleRate(8000);
-    format.setChannelCount(1);
-    format.setSampleSize(16);
-    format.setCodec("audio/pcm");
-    format.setSampleType(QAudioFormat::SignedInt);
-    format.setByteOrder(QAudioFormat::LittleEndian);
-
-    output = new QAudioOutput(format,this);
-    output->setVolume(200);
-    outputDevice = output->start();//开始播放
-    QAudioDeviceInfo info(QAudioDeviceInfo::defaultInputDevice());
-    qDebug()<<info.deviceName()<<"----";
-
-    foreach (const QAudioDeviceInfo &deviceinfo, QAudioDeviceInfo::availableDevices(QAudio::AudioInput)) {
-        qDebug()<<"Device name: "<<deviceinfo.deviceName();
-    }
-    //end for audio*/
+    //下面是音频的
 
     aud.setCurrentSampleInfo(8000,16,1);
     aud.setCurrentVolumn(100);
-
     audsend.setaudioformat(8000,1,16);
 
-    aud.start();
-
-    audsend.mystart();
-    //aud.run();
-
 }
-
-/*void MainWindow::readyReadSlot(){
-    while(udpsocket->hasPendingDatagrams()){
-            QHostAddress senderip;
-            quint16 senderport;
-            qDebug()<<"audio is being received..."<<endl;
-            video vp;
-            memset(&vp,0,sizeof(vp));
-            udpsocket->readDatagram((char*)&vp,sizeof(vp),&senderip,&senderport);
-            outputDevice->write(vp.data,vp.lens);
-    }
-}*/
 
 MainWindow::~MainWindow()
 {
     delete ui;
     delete sendSocket;
     delete regUdpSocket;
+
+    delete regtimer;
+    delete calltimerT9005;
+    delete calltimerT9006;
+    delete calltimerT9007;
+    delete calltimerT9009;
+    delete calltimerT9014;
+
 }
 
 void MainWindow::on_start_clicked()
@@ -204,10 +170,13 @@ void MainWindow::recvRegInfo(){
             ui->start->setDisabled(true);
             ui->DeReigster->setDisabled(false);
             ui->call->setDisabled(false);
+            ui->textEdit->setDisabled(false);
 
             ui->start->setVisible(false);
             ui->DeReigster->setVisible(true);
             ui->call->setVisible(true);
+            ui->textEdit->setVisible(true);
+            ui->label->setVisible(true);
         }
         else if(judge == 0x04  && registerstate == REGISTERED){//收到从PCC端来的voice DeRegister Req 应该终止业务
             ui->start->setText("开机注册");
@@ -258,6 +227,7 @@ void MainWindow::recvRegInfo(){
             ui->disconnect->setVisible(true);
             ui->connect->setVisible(true);
 
+
         }
         else if(judge == 0x07 && callstate == U1){
             qDebug()<<"收到call setup ack!";
@@ -298,6 +268,10 @@ void MainWindow::recvRegInfo(){
             ui->call->setDisabled(true);
             ui->disconnect->setVisible(true);
 
+
+            /*就可以开启语音发送线程*/
+            aud.start();
+            audsend.mystart();
         }
         else if(judge == 0x0a && callstate == U8){
             qDebug()<<"收到call connect ack,通话建立成功";
@@ -312,6 +286,9 @@ void MainWindow::recvRegInfo(){
             ui->disconnect->setVisible(true);
 
             /*就可以开启语音发送线程*/
+            aud.start();
+            audsend.mystart();
+
 
         }
         else if(judge == 0x0c){//收到Call Release Req ;U3,4,7,8,9,10状态都需要变成U0空闲态
@@ -321,6 +298,8 @@ void MainWindow::recvRegInfo(){
             /*P15页UE取消呼叫或者是P16页被叫UE没接听或者PCC拒绝呼叫，则不需要杀掉语音进程，否则P15页UE挂机则需要杀掉语音进程，根据呼叫状态区分即可*/
             if(callstate == U10){
                 //杀掉语音进程
+                aud.stop();
+                audsend.mystop();
             }
 
             calltimerT9009->stop();
@@ -335,7 +314,7 @@ void MainWindow::recvRegInfo(){
             ui->disconnect->setText("结束通话");
 
         }
-        //char * strJudge=datagram.data();//把QByteArray转换成char *
+        delete []recvbuf;
     }
 }
 quint32 MainWindow::getlocalIP(){
@@ -474,11 +453,8 @@ void MainWindow::init_sc2(){//这个函数不需要了
     SC2_header[5] = 0x00;//信令方向00为上行
 }
 
-void MainWindow::init_callSetup(string calledBCDNumber){
-    if(calledBCDNumber.size()!=11){
-        qDebug()<<"电话号码长度有误！";
-        return;
-    }
+void MainWindow::init_callSetup(){
+
     callSetup[0] = 0x00;//Protocol version
     callSetup[1] = 0x15;//Message length == 21
     callSetup[2] = 0x06;//Message type
@@ -492,21 +468,7 @@ void MainWindow::init_callSetup(string calledBCDNumber){
     callSetup[13] = 0x03;// tag
     callSetup[14] = 0x08;// length of called BCD number
 
-    /*init BCD number*/
-    calledBCDNumber += '?';//为了最后可以补一个1111
-    unsigned char nums[6];
-    memset(nums,0,6);
-    for(int i=0;i<=5;i++){//注意大端
-        int index1 = 2*i; //低位数字存在一个字节里面的低4位
-        int index2 = 2*i+1;	//高位数字
-        int num1 = int(calledBCDNumber[index1]- '0');
-        unsigned char num1c = num1;
-        nums[i] = nums[i] | num1c;
-        int num2 = int(calledBCDNumber [index2] -'0');
-        unsigned char num2c = (num2<<4);
-        nums[i] = nums[i] | num2c;
-    }
-    memcpy(callSetup+15,nums,6);
+
     /*
     short len = htons(sizeof(callSetup));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_callSetup,SC2_header,sizeof(SC2_header)); memcpy(sc2_callSetup+sizeof(SC2_header), callSetup, sizeof(callSetup));
@@ -666,9 +628,31 @@ void MainWindow::on_call_clicked()//呼叫按钮
         qDebug()<<"已经在通话";
         return;
     }
+
+    //初始化callsetup中的被叫号码
+    string calledBCDNumber = ui->textEdit->toPlainText().toStdString();
+    if(calledBCDNumber.size()!=11){
+        qDebug()<<"电话号码长度有误！";
+        return;
+    }
+    calledBCDNumber += '?';//为了最后可以补一个1111
+    unsigned char nums[6];
+    memset(nums,0,6);
+    for(int i=0;i<=5;i++){//注意大端
+        int index1 = 2*i; //低位数字存在一个字节里面的低4位
+        int index2 = 2*i+1;	//高位数字
+        int num1 = int(calledBCDNumber[index1]- '0');
+        unsigned char num1c = num1;
+        nums[i] = nums[i] | num1c;
+        int num2 = int(calledBCDNumber [index2] -'0');
+        unsigned char num2c = (num2<<4);
+        nums[i] = nums[i] | num2c;
+    }
+    memcpy(callSetup+15,nums,6);
+
     /*以下流程是主叫建立流程。我首先忽略掉被叫建立的过程，模拟的是全程顺利的过程，呼叫成功之后应该开启语音发送线程*/
-    ui->call->setDisabled(true);
     callstate = U1;
+
     //发送呼叫建立信令
     calltimerT9005 -> start(5000);
     //UE -> PCC
@@ -772,13 +756,17 @@ void MainWindow::ReleaseRegResources(){//释放注册资源
     ui->call->setDisabled(true);
     ui->disconnect->setDisabled(true);
     ui->connect->setDisabled(true);
+    ui->textEdit->setDisabled(true);
 
     ui->start->setVisible(true);
     ui->DeReigster->setVisible(false);
     ui->call->setVisible(false);
     ui->disconnect->setVisible(false);
     ui->connect->setVisible(false);
-
+    ui->textEdit->setVisible(false);
+    ui->label->setVisible(false);
+    aud.stop();
+    audsend.mystop();
 }
 void MainWindow::ReleaseCallResources(){//释放呼叫资源
 
@@ -798,6 +786,9 @@ void MainWindow::ReleaseCallResources(){//释放呼叫资源
 
     ui->disconnect->setVisible(false);
     ui->connect->setVisible(false);
+
+    aud.stop();
+    audsend.mystop();
 
 }
 
@@ -825,6 +816,8 @@ void MainWindow::on_disconnect_clicked()//主叫或者被叫的结束通话按�
         calltimerT9009->start(5000);
 
         /*终止语音线程，并且还有填写disconnect 的cause是 用户挂机*/
+        aud.stop();
+        audsend.mystop();
         //进入资源释放态
         callstate = U19;
         int cause = 27;//原因是1B 呼叫正常释放
@@ -857,4 +850,18 @@ void MainWindow::on_connect_clicked()//UE被叫的时候点击接听按钮
     callstate = U8;//呼叫连接请求态
     int num=sendSocket->writeDatagram((char*)callConnect,sizeof(callConnect),Ancaddr,regsendPort);
     qDebug()<<"UE被叫接听，发送call connect，长度为 "<<num<<" 字节";
+}
+
+void MainWindow::on_pushButton_clicked()
+{
+    aud.start();
+    audsend.mystart();
+
+}
+
+void MainWindow::on_pushButton_2_clicked()
+{
+    aud.stop();
+    audsend.mystop();
+
 }
