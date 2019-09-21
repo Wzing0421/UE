@@ -19,7 +19,7 @@ audiosendthread::audiosendthread(QObject *parent)
 
     SN = 0;//序列号初始化成0
 
-    /*初始化sc2_2接口的头*/
+    /*初始化sc2_2接口的头,这里写的很简陋，需要再看一下*/
     sc2_2[0]=0x00;
     memset(sc2_2+1,0,5);//5个字节的callid
     short len24k = 18;

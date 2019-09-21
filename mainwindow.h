@@ -59,8 +59,8 @@ public:
     int Resend_DeReg_cnt;//用于记录注销重发的次数
 
     //注意都是大端存储,信号以及加上sc2头的信号
-    unsigned char regMsg[21],sc2_regMsg[29];//第一次注册所用的注册信息
-    unsigned char regMsg_au[37],sc2_regMsg_au[45];//第二次鉴权注册用的注册信息。添加了16字节的MD5用户信息摘要
+    unsigned char regMsg[22],sc2_regMsg[30];//第一次注册所用的注册信息,长度是22,因为IPAddr包含tag增加了一个字节
+    unsigned char regMsg_au[40],sc2_regMsg_au[48];//第二次鉴权注册用的注册信息。添加了16字节的MD5用户信息摘要，以及IPAddr以及security response的tag以及security response的length
     unsigned char voiceDeRegisterRsp[8],sc2_voiceDeRegisterRsp[16];//UE对于PCC端的停止注册的回复
     unsigned char voiceDeRegisterReq[10],sc2_voiceDeRegisterReq[18];//UE对于PCC端的停止注册的请求
     unsigned char SC2_header[8];//8字节的SC2接口的头，实际上是ANC加上的，只不过为了简便在这里面就加上了
@@ -92,7 +92,7 @@ public:
     QTimer *calltimerT9014;
 
     /*呼叫状态的变量*/
-    unsigned char callSetup[21],sc2_callSetup[29];
+    unsigned char callSetup[21],sc2_callSetup[29];//注意最后BCD number是TLV
     unsigned char callSetupAck[7],sc2_callSetupAck[15];
     unsigned char callAllerting[7],sc2_callAllerting[15];
     unsigned char callConnect[8],sc2_callConnect[16];
@@ -102,6 +102,7 @@ public:
 
     int CallConnectcnt; //用于记录call connect的重发次数
     int CallDisconnectcnt;
+
     /*以下是呼叫过程的初始化*/
     void init_callSetup();
     void init_callSetupAck();

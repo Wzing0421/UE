@@ -1,6 +1,3 @@
-/*7月30日更新日志：把UE主叫与主叫的定时器写好了，下一步完善被叫的逻辑和定时器*/
-/*完成情况：把UE的被叫完成了，没用完成测试，明天完成UE被叫的测试以及PCC服务器对于被叫的测试*/
-/*7月31日更新日志：把6.2.2.3之前写完了（不包含）*/
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
@@ -44,8 +41,6 @@ MainWindow::MainWindow(QWidget *parent) :
     init_regMsg(QIMSIstr);//初始化第一个注册信息
     init_voiceDeRegisterRsp();//初始化 DeRegister Rsp
     init_voiceDeRegisterReq();//初始化 DeRegister Req
-
-    //init_sc2();//初始化sc2头
 
     callstate = U0;
     /*初始化呼叫信令*/
@@ -149,13 +144,17 @@ void MainWindow::recvRegInfo(){
             qDebug()<<"收到authorization command！";
             registerstate = AUTH_PROC;
 
-            //首先截取9到16字节的内容作为鉴权参数nonce
-            QByteArray word = datagram.mid(8,8);
+            //首先截取10到17字节的内容作为鉴权参数nonce,注意第9个字节是Nonce的长度
+            QByteArray word = datagram.mid(9,8);
             //计算MD5
             QByteArray str = QCryptographicHash::hash(word,QCryptographicHash::Md5);
 
-            //16byte长度，或者可以理解成32位BCD码组成
-            memcpy(regMsg_au + 21, (char*)&str, 16);
+            //16byte长度，或者可以理解成32位BCD码组成,这里注意后来加上了tag和len
+            unsigned char tag = 0x05;
+            unsigned char len = 0x10;//长度是16
+            memcpy(regMsg_au + 22, (char*)&tag, 1);
+            memcpy(regMsg_au + 23, (char*)&len, 1);
+            memcpy(regMsg_au + 24, (char*)&str, 16);
 
             //再次发送带有鉴权的注册消息
             regtimer->start(5000);
@@ -273,7 +272,7 @@ void MainWindow::recvRegInfo(){
             aud.start();
             audsend.mystart();
         }
-        else if(judge == 0x0a && callstate == U8){
+        else if(judge == 0x0a && callstate == U8){//被叫
             qDebug()<<"收到call connect ack,通话建立成功";
             callstate = U10;
             calltimerT9014->stop();
@@ -374,11 +373,13 @@ void MainWindow::init_regMsg(QString QIMSIstr){
         //QString QIMSIstr = "460001357924680";
         init_IMSI(QIMSIstr);
 
-        //第18到21字节是IPAddr
+        unsigned char tag = 0x06;//IPAddr的tag是0x06
+        memcpy(regMsg+17,(char*) &tag, 1);
+        //第19到22字节是IPAddr
         uint32_t IPnum = htonl(localip);//转换成大端模式
-        memcpy(regMsg+17,(char*) &IPnum, 4);
+        memcpy(regMsg+18,(char*) &IPnum, 4);
 
-        memcpy(regMsg_au,regMsg,21);
+        memcpy(regMsg_au,regMsg,22);
 
         //加上sc2头.现在不需要了
         /*
