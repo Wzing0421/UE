@@ -1,3 +1,4 @@
+/*9月22日更新：增加了周期注册的功能*/
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
@@ -126,8 +127,6 @@ void MainWindow::recvRegInfo(){
         quint16 senderPort;//
         regUdpSocket->readDatagram(datagram.data(),datagram.size(),&senderIP,&senderPort);//发送方的IP和port
 
-        if(regtimer->isActive()) regtimer->stop();
-
         int recvlen = 0;//sci头的第7 8字节是净负荷的长度,注意大端
         recvlen = recvlen | datagram[6];
         recvlen = recvlen << 8;
@@ -142,6 +141,7 @@ void MainWindow::recvRegInfo(){
         /*这里面涉及到接收到包之后复制的地方还需要改，不是说加了sc2头之后仅仅吧索引从2变成10就可以了*/
         if(judge == 0x02 && registerstate == UNREGISTERED){//说明是authorization command
             qDebug()<<"收到authorization command！";
+            if(regtimer->isActive()) regtimer->stop();
             registerstate = AUTH_PROC;
 
             //首先截取10到17字节的内容作为鉴权参数nonce,注意第9个字节是Nonce的长度
@@ -162,20 +162,56 @@ void MainWindow::recvRegInfo(){
             qDebug()<<"发送带有鉴权的注册消息，长度为 "<<num<<" 字节";
         }
         else if(judge == 0x03 && registerstate == AUTH_PROC){//说明是voice register rsp
-            ui->start->setText("注册成功");
-            qDebug()<<"收到 register rsp,注册成功！";
-            registerstate = REGISTERED;//标识注册成功
-            callstate = U0;
-            ui->start->setDisabled(true);
-            ui->DeReigster->setDisabled(false);
-            ui->call->setDisabled(false);
-            ui->textEdit->setDisabled(false);
+            QMessageBox box;
+            unsigned char cause = *(recvbuf+8);
+            switch (cause) {
+            case 0x00://注册成功
 
-            ui->start->setVisible(false);
-            ui->DeReigster->setVisible(true);
-            ui->call->setVisible(true);
-            ui->textEdit->setVisible(true);
-            ui->label->setVisible(true);
+                ui->start->setText("注册成功");
+                qDebug()<<"收到 register rsp,注册成功！";
+
+                if(regtimer->isActive()) regtimer->stop();
+                registerstate = REGISTERED;//标识注册成功
+                callstate = U0;
+                ui->start->setDisabled(true);
+                ui->DeReigster->setDisabled(false);
+                ui->call->setDisabled(false);
+                ui->textEdit->setDisabled(false);
+
+                ui->start->setVisible(false);
+                ui->DeReigster->setVisible(true);
+                ui->call->setVisible(true);
+                ui->textEdit->setVisible(true);
+                ui->label->setVisible(true);
+
+                /*开启周期注册定时器*/
+
+                break;
+            case 0x03://鉴权失败
+
+                ReleaseRegResources();
+                box.setText(tr("鉴权失败，请重新注册！"));
+                box.exec();
+                break;
+
+            case 0x08://用户不存在
+
+                ReleaseRegResources();
+                box.setText(tr("用户不存在，请重新注册！"));
+                box.exec();
+                break;
+
+            default:
+
+                ReleaseRegResources();
+                string str = "注册失败，错误码字是： ";
+                str += to_string(int(cause));
+                box.setText(QString::fromStdString(str));
+                box.exec();
+                break;
+            }
+
+
         }
         else if(judge == 0x04  && registerstate == REGISTERED){//收到从PCC端来的voice DeRegister Req 应该终止业务
             ui->start->setText("开机注册");
@@ -531,7 +567,7 @@ void MainWindow::init_callDisconnect(int cause){
     callDisconnect[2] = 0x0b;//message type
     //后面的需要memcpy以下从PCC发送来的call ID
 
-    callDisconnect[8] = char(cause);//casue
+    callDisconnect[7] = char(cause);//casue
 
     /*
     short len = htons(sizeof(callDisconnect));
@@ -546,7 +582,7 @@ void MainWindow::init_callReleaseRsp(int cause){
     callReleaseRsp[2] = 0x0d;//message type
     //后面的需要memcpy以下从PCC发送来的call ID
 
-    callReleaseRsp[8] = char(cause);//casue
+    callReleaseRsp[7] = char(cause);//casue
 
     /*
     short len = htons(sizeof(callReleaseRsp));
@@ -806,6 +842,8 @@ void MainWindow::on_disconnect_clicked()//主叫或者被叫的结束通话按�
 
         //进入资源释放态
         callstate = U19;
+        unsigned char cause = 0x1a;
+        memcpy(callDisconnect+7, &cause,1);
         sendSocket->writeDatagram((char*)callDisconnect,sizeof(callDisconnect),Ancaddr,regsendPort);
         qDebug()<<"主叫在响铃期间停止呼叫，发送call Disconnect!";
 

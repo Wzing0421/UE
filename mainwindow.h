@@ -96,8 +96,8 @@ public:
     unsigned char callSetupAck[7],sc2_callSetupAck[15];
     unsigned char callAllerting[7],sc2_callAllerting[15];
     unsigned char callConnect[8],sc2_callConnect[16];
-    unsigned char callConnectAck[8],sc2_callConnectAck[16];
-    unsigned char callDisconnect[7],sc2_callDisconnect[15];
+    unsigned char callConnectAck[7],sc2_callConnectAck[15];
+    unsigned char callDisconnect[8],sc2_callDisconnect[16];
     unsigned char callReleaseRsp[8],sc2_callReleaseRsp[16];
 
     int CallConnectcnt; //用于记录call connect的重发次数
