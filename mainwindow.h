@@ -53,10 +53,16 @@ public:
     QHostAddress Ancaddr;//PCC的IP地址
     quint32 localip; //本机IP地址
 
-    QTimer *regtimer;
+    //考虑到周期注册的问题，我把注册的定时器细分，这样就不需考虑多重计时器的复用问题了。
+    QTimer *regtimer;//第一次注册定时器
+    QTimer *reg_auth_timer;//鉴权注册定时器
+    QTimer *dereg_timer;//注销定时器
+    QTimer *periodtimer;//周期注册定时器
+
     int Resendcnt; //用于记录register req的重发次数
     int Resend_au_cnt;//用于记录鉴权注册重发的次数
     int Resend_DeReg_cnt;//用于记录注销重发的次数
+    int Resend_period_cnt;//用于记录周期注册重发的次数
 
     //注意都是大端存储,信号以及加上sc2头的信号
     unsigned char regMsg[22],sc2_regMsg[30];//第一次注册所用的注册信息,长度是22,因为IPAddr包含tag增加了一个字节
@@ -123,7 +129,11 @@ private slots:
 
     void recvRegInfo();//接收注册消息的回调函数
 
-    void proc_timeout();//注册时候的超时处理，设置T9001=5s
+    void proc_timeout();//第一次注册时候的超时处理，设置T9001=5s
+    void proc_auth_timeout();//鉴权注册时候的超时处理
+    void proc_dereg_timeout();//注销时候的超时处理
+    void proc_periodtimeout();//周期注册超时处理
+
     void call_timeoutT9005();
     void call_timeoutT9006();
     void call_timeoutT9007();

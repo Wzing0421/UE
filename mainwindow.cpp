@@ -31,6 +31,7 @@ MainWindow::MainWindow(QWidget *parent) :
     Resendcnt = 0;//设定重发次数初始化为0,当加到2的时候还没有回复，则注册失败
     Resend_au_cnt = 0; //设定重发鉴权注册次数，初始化为0,当加到2的时候还没有回复，则注册失败
     Resend_DeReg_cnt = 0; //设定注销重发次数，初始化为0,当加到2的时候还没有回复，则注册失败
+    Resend_period_cnt = 0;
     CallConnectcnt = 0;//设定call connect册次数，初始化为0
     CallDisconnectcnt = 0;//设定call connect册次数，初始化为0
 
@@ -70,6 +71,12 @@ MainWindow::MainWindow(QWidget *parent) :
 
     regtimer = new QTimer();//注册定时器
     connect(regtimer,SIGNAL(timeout()),this,SLOT(proc_timeout()));
+    reg_auth_timer = new QTimer();
+    connect(reg_auth_timer,SIGNAL(timeout()),this,SLOT(proc_auth_timeout()));
+    dereg_timer = new QTimer();
+    connect(dereg_timer,SIGNAL(timeout()),this,SLOT(proc_dereg_timeout()));
+    periodtimer = new QTimer();//周期注册定时器
+    connect(periodtimer,SIGNAL(timeout()),this,SLOT(proc_periodtimeout()));
 
     calltimerT9005 = new QTimer();
     connect(calltimerT9005,SIGNAL(timeout()),this,SLOT(call_timeoutT9005()));
@@ -97,6 +104,10 @@ MainWindow::~MainWindow()
     delete regUdpSocket;
 
     delete regtimer;
+    delete reg_auth_timer;
+    delete dereg_timer;
+    delete periodtimer;
+
     delete calltimerT9005;
     delete calltimerT9006;
     delete calltimerT9007;
@@ -112,6 +123,9 @@ void MainWindow::on_start_clicked()
     ui->start->setText("正在注册");
     ui->start->setDisabled(true);
     ui->start->setVisible(false);
+
+    unsigned char REG_TYPE = 0x00;//这里需要区分是第一次注册不是周期注册
+    regMsg[8] = REG_TYPE;
     //这里开始的是第一次计时，等待的是PCC回复的authrization command
     regtimer->start(5000);
     int num=sendSocket->writeDatagram((char*)regMsg,sizeof(regMsg),Ancaddr,regsendPort);//num返回成功发送的字节数量
@@ -157,60 +171,70 @@ void MainWindow::recvRegInfo(){
             memcpy(regMsg_au + 24, (char*)&str, 16);
 
             //再次发送带有鉴权的注册消息
-            regtimer->start(5000);
+            reg_auth_timer->start(5000);
             int num=sendSocket->writeDatagram((char*)regMsg_au,sizeof(regMsg_au),Ancaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"发送带有鉴权的注册消息，长度为 "<<num<<" 字节";
         }
-        else if(judge == 0x03 && registerstate == AUTH_PROC){//说明是voice register rsp
-            QMessageBox box;
-            unsigned char cause = *(recvbuf+8);
-            switch (cause) {
-            case 0x00://注册成功
+        else if(judge == 0x03 ){//说明是voice register rsp
 
-                ui->start->setText("注册成功");
-                qDebug()<<"收到 register rsp,注册成功！";
+            if(registerstate == AUTH_PROC){//这说明是鉴权注册
+                QMessageBox box;
+                unsigned char cause = *(recvbuf+8);
+                switch (cause) {
+                case 0x00://注册成功
+
+                    ui->start->setText("注册成功");
+                    qDebug()<<"收到 register rsp,注册成功！";
+
+                    if(reg_auth_timer->isActive()) reg_auth_timer->stop();
+                    registerstate = REGISTERED;//标识注册成功
+                    callstate = U0;
+                    ui->start->setDisabled(true);
+                    ui->DeReigster->setDisabled(false);
+                    ui->call->setDisabled(false);
+                    ui->textEdit->setDisabled(false);
+
+                    ui->start->setVisible(false);
+                    ui->DeReigster->setVisible(true);
+                    ui->call->setVisible(true);
+                    ui->textEdit->setVisible(true);
+                    ui->label->setVisible(true);
+
+                    /*开启周期注册定时器，周期注册每隔3600s发送的是regMsg_au，这部分暂时还没完成*/
+                    periodtimer->start(periodtime);
+
+
+                    break;
+                case 0x03://鉴权失败
+
+                    ReleaseRegResources();
+                    box.setText(tr("鉴权失败，请重新注册！"));
+                    box.exec();
+                    break;
+
+                case 0x08://用户不存在
+
+                    ReleaseRegResources();
+                    box.setText(tr("用户不存在，请重新注册！"));
+                    box.exec();
+                    break;
+
+                default:
+
+                    ReleaseRegResources();
+                    string str = "注册失败，错误码字是： ";
+                    str += to_string(int(cause));
+                    box.setText(QString::fromStdString(str));
+                    box.exec();
+                    break;
+                }
+
+            }
+            else if(registerstate == REGISTERED){//这说明是周期注册
 
                 if(regtimer->isActive()) regtimer->stop();
-                registerstate = REGISTERED;//标识注册成功
-                callstate = U0;
-                ui->start->setDisabled(true);
-                ui->DeReigster->setDisabled(false);
-                ui->call->setDisabled(false);
-                ui->textEdit->setDisabled(false);
-
-                ui->start->setVisible(false);
-                ui->DeReigster->setVisible(true);
-                ui->call->setVisible(true);
-                ui->textEdit->setVisible(true);
-                ui->label->setVisible(true);
-
-                /*开启周期注册定时器*/
-
-                break;
-            case 0x03://鉴权失败
-
-                ReleaseRegResources();
-                box.setText(tr("鉴权失败，请重新注册！"));
-                box.exec();
-                break;
-
-            case 0x08://用户不存在
-
-                ReleaseRegResources();
-                box.setText(tr("用户不存在，请重新注册！"));
-                box.exec();
-                break;
-
-            default:
-
-                ReleaseRegResources();
-                string str = "注册失败，错误码字是： ";
-                str += to_string(int(cause));
-                box.setText(QString::fromStdString(str));
-                box.exec();
-                break;
+                qDebug()<<"收到周期注册回复";
             }
-
 
         }
         else if(judge == 0x04  && registerstate == REGISTERED){//收到从PCC端来的voice DeRegister Req 应该终止业务
@@ -305,6 +329,7 @@ void MainWindow::recvRegInfo(){
 
 
             /*就可以开启语音发送线程*/
+            periodtimer->stop();//首先需要关闭周期注册业务
             aud.start();
             audsend.mystart();
         }
@@ -321,6 +346,7 @@ void MainWindow::recvRegInfo(){
             ui->disconnect->setVisible(true);
 
             /*就可以开启语音发送线程*/
+            periodtimer->stop();
             aud.start();
             audsend.mystart();
 
@@ -609,11 +635,35 @@ void MainWindow::proc_timeout(){
             ReleaseRegResources();
         }
     }
-    else if(registerstate == AUTH_PROC){//这说明是鉴权注册超时了
-        if(Resend_au_cnt <=1){
-            Resend_au_cnt++;
+
+    else if(registerstate == REGISTERED){//周期注册超时
+
+        if(Resend_period_cnt <=1){
+            Resend_period_cnt++;
             regtimer->start(5000);
             int num=sendSocket->writeDatagram((char*)regMsg,sizeof(regMsg),Ancaddr,regsendPort);//num返回成功发送的字节数量
+            qDebug()<<"第 "<<Resend_period_cnt<<" 次数重发 周期 注册消息，长度为 "<<num<<" 字节";
+        }
+        else{
+            ui->start->setText("开机注册");
+            qDebug()<<"周期注册没有收到 voice register rsp, 请点击开机注册按钮重试！";
+
+            ReleaseRegResources();
+        }
+
+
+    }
+
+}
+
+void MainWindow::proc_auth_timeout(){//鉴权消息超时
+
+    reg_auth_timer->stop();
+    if(registerstate == AUTH_PROC){//这说明是鉴权注册超时了
+        if(Resend_au_cnt <=1){
+            Resend_au_cnt++;
+            reg_auth_timer->start(5000);
+            int num=sendSocket->writeDatagram((char*)regMsg_au,sizeof(regMsg_au),Ancaddr,regsendPort);//num返回成功发送的字节数量
             qDebug()<<"第 "<<Resend_au_cnt<<" 次数重发 鉴权 注册消息，长度为 "<<num<<" 字节";
         }
         else{
@@ -623,24 +673,41 @@ void MainWindow::proc_timeout(){
             ReleaseRegResources();
         }
     }
-    else if(registerstate == REGISTERED){//UE注销超时
-        if(Resend_DeReg_cnt <=1){
-            Resend_DeReg_cnt++;
-            regtimer->start(5000);
-            int num=sendSocket->writeDatagram((char*)voiceDeRegisterReq,sizeof(voiceDeRegisterReq),Ancaddr,regsendPort);//num返回成功发送的字节数量
-            qDebug()<<"第 "<<Resend_DeReg_cnt<<" 次数重发 注销 消息，长度为 "<<num<<" 字节";
-        }
-        else{
+}
 
-            ReleaseRegResources();
-            ui->start->setText("开机注册");
-            qDebug()<<"UE注销超时，自动注销！";
+void MainWindow::proc_dereg_timeout(){
 
-        }
+    dereg_timer->stop();
+    if(registerstate == REGISTERED){//UE注销超时
+            if(Resend_DeReg_cnt <=1){
+                Resend_DeReg_cnt++;
+                dereg_timer->start(5000);
+                int num=sendSocket->writeDatagram((char*)voiceDeRegisterReq,sizeof(voiceDeRegisterReq),Ancaddr,regsendPort);//num返回成功发送的字节数量
+                qDebug()<<"第 "<<Resend_DeReg_cnt<<" 次数重发 注销 消息，长度为 "<<num<<" 字节";
+            }
+            else{
 
+                ReleaseRegResources();
+                ui->start->setText("开机注册");
+                qDebug()<<"UE注销超时，自动注销！";
+
+            }
 
     }
+}
 
+void MainWindow::proc_periodtimeout(){//周期注册，每次超时都重新发送一个regMsg
+
+    periodtimer->stop();
+    unsigned char REG_TYPE = 0x01;//周期注册是0x01
+    regMsg[8] = REG_TYPE;
+
+    periodtimer->start(periodtime);
+    Resendcnt = 0;
+    //其实这里面应该调用的是reg_timer计时器，因为发送的是第一个
+    regtimer->start(5000);
+    int num = sendSocket->writeDatagram((char*)regMsg,sizeof(regMsg),Ancaddr,regsendPort);
+    qDebug()<<"周期注册，发送regMsg长度是： "<<num;
 }
 
 void MainWindow::on_DeReigster_clicked()
@@ -649,7 +716,7 @@ void MainWindow::on_DeReigster_clicked()
         qDebug()<<"请先进行注册";
     }
     ui->DeReigster->setDisabled(true);
-    regtimer->start(5000);
+    dereg_timer->start(5000);
     int num=sendSocket->writeDatagram((char*)voiceDeRegisterReq,sizeof(voiceDeRegisterReq),Ancaddr,regsendPort);//num返回成功发送的字节数量
     qDebug()<<"UE请求注销,长度: "<<num;
 }
@@ -780,12 +847,22 @@ void MainWindow::call_timeoutT9014(){//call connect超时处理
 void MainWindow::ReleaseRegResources(){//释放注册资源
 
     if(regtimer->isActive()) regtimer->stop();
+    if(reg_auth_timer->isActive()) reg_auth_timer->stop();
+    if(dereg_timer->isActive()) dereg_timer->stop();
+    if(periodtimer->isActive()) periodtimer->stop();
+
+    if(calltimerT9005->isActive()) calltimerT9005->stop();
+    if(calltimerT9006->isActive()) calltimerT9006->stop();
+    if(calltimerT9007->isActive()) calltimerT9007->stop();
+    if(calltimerT9009->isActive()) calltimerT9009->stop();
+    if(calltimerT9014->isActive()) calltimerT9014->stop();
 
     registerstate = UNREGISTERED;
     callstate = U0;
     Resendcnt = 0;
     Resend_au_cnt = 0;
     Resend_DeReg_cnt = 0;
+    Resend_period_cnt = 0;
     CallConnectcnt = 0;
     CallDisconnectcnt = 0;
     ui->start->setDisabled(false);
@@ -826,6 +903,9 @@ void MainWindow::ReleaseCallResources(){//释放呼叫资源
 
     aud.stop();
     audsend.mystop();
+
+    //注意在业务完成之后要启动周期注册定时器
+    periodtimer->start(periodtime);
 
 }
 
