@@ -402,8 +402,8 @@ void MainWindow::init_regMsg(QString QIMSIstr){
         regMsg[0] = protocolVersion; //0x00是测试版本，0x01是初始版本，我们先用测试版本
 
 
-        //第2字节，在第一次注册的时候，长度是21
-        unsigned char msgLength = 0x15;
+        //第2字节，在第一次注册的时候，长度是22
+        unsigned char msgLength = 0x16;
         regMsg[1] = msgLength;
 
         //第3字节，消息类型
@@ -412,16 +412,13 @@ void MainWindow::init_regMsg(QString QIMSIstr){
 
         //第4字节到第8字节，共40比特，作为S-TMSI.
         //s-TMSI = MMEC(8bits) + M-TMSI(32bits)移动用户标识
-        //总的来说，这是一个区分不同UE的随机数，我先把它设置为全0吧
+        //总的来说，这是一个区分不同UE的随机数，只要不是全0就行，我把地址最高为设置成0x01
 
-        unsigned char MMEC = 0x00;
-        regMsg[3] = MMEC;
-        int MTMSI = 0x00000000;
-        unsigned char *p = (unsigned char *)&MTMSI;
-        regMsg[4] = *p;//0x00注意大端
-        regMsg[5] = *(p + 1);//00
-        regMsg[6] = *(p + 2);//00
-        regMsg[7] = *(p + 3);//00
+        regMsg[3] = 0x00;
+        regMsg[4] = 0x00;
+        regMsg[5] = 0x00;
+        regMsg[6] = 0x00;
+        regMsg[7] = 0x01;
 
         //第9字节，reg_type
         unsigned char REG_TYPE = 0x00;//开机注册是00，周期注册是0x01，注销是03
@@ -431,14 +428,27 @@ void MainWindow::init_regMsg(QString QIMSIstr){
         //unsigned long long int IMSInum = 460001357924680;
         //memcpy(regMsg+9,&IMSInum,sizeof(unsigned long long int));
 
-        //用BCD码字来存储，不用上面的long long int
-        //QString QIMSIstr = "460001357924680";
-        init_IMSI(QIMSIstr);
 
+        //QString QIMSIstr = "460001357924680";
+        //init_IMSI(QIMSIstr);
+        //先不用这个函数了，直接指定是01100000八个字节
+        regMsg[9] = 0x00;
+        regMsg[10] = 0x01;
+        regMsg[11] = 0x01;
+        regMsg[12] = 0x00;
+        regMsg[13] = 0x00;
+        regMsg[14] = 0x00;
+        regMsg[15] = 0x00;
+        regMsg[16] = 0x00;
         unsigned char tag = 0x06;//IPAddr的tag是0x06
         memcpy(regMsg+17,(char*) &tag, 1);
+
         //第19到22字节是IPAddr
-        uint32_t IPnum = htonl(localip);//转换成大端模式
+        QHostAddress address;
+        address.setAddress("162.105.85.218");
+        bool bOk = false;
+        quint32 nIPV4 = address.toIPv4Address(&bOk);
+        uint32_t IPnum = htonl(nIPV4);//转换成大端模式
         memcpy(regMsg+18,(char*) &IPnum, 4);
 
         memcpy(regMsg_au,regMsg,22);
@@ -488,8 +498,15 @@ void MainWindow::init_voiceDeRegisterReq(){//初始化DeRegisterReq
     voiceDeRegisterReq[0] = 0x00;
     voiceDeRegisterReq[1] = 0x0a;//message length == 10byte
     voiceDeRegisterReq[2] = 0x04;//message type;
-    //略去STMSI部分
-    voiceDeRegisterReq[8] = 0x03;//cause 0x03表示的是UE 侧的注销请求
+
+    //STMSI
+    voiceDeRegisterReq[3] = 0x00;
+    voiceDeRegisterReq[4] = 0x00;
+    voiceDeRegisterReq[5] = 0x00;
+    voiceDeRegisterReq[6] = 0x00;
+    voiceDeRegisterReq[7] = 0x01;
+
+    voiceDeRegisterReq[8] = 0x03;//dereg_type 0x03表示的是UE 侧的注销请求
     voiceDeRegisterReq[9] = 0x10;//UE关机注销
 
     /*
@@ -503,7 +520,12 @@ void MainWindow::init_voiceDeRegisterRsp(){
     voiceDeRegisterRsp[0] = 0x00;
     voiceDeRegisterRsp[1] = 0x08;//message length
     voiceDeRegisterRsp[2] = 0x05;//message type
-    //后面5个字节的STMSI目前就是0，是和前面RegMsg是一样的
+    //后面5个字节的STMSI
+    voiceDeRegisterRsp[3] = 0x00;
+    voiceDeRegisterRsp[4] = 0x00;
+    voiceDeRegisterRsp[5] = 0x00;
+    voiceDeRegisterRsp[6] = 0x00;
+    voiceDeRegisterRsp[7] = 0x01;
     /*
     short len = htons(sizeof(voiceDeRegisterRsp));
     memcpy(SC2_header+6,(char*)&len,2);memcpy(sc2_voiceDeRegisterRsp,SC2_header,sizeof(SC2_header)); memcpy(sc2_voiceDeRegisterRsp+sizeof(SC2_header), voiceDeRegisterRsp, sizeof(voiceDeRegisterRsp));
@@ -523,8 +545,14 @@ void MainWindow::init_callSetup(){
     callSetup[2] = 0x06;//Message type
     //call ID 4个字节填全F
     memset(callSetup+3, 255,4);
+
     //STMSI
-    memset(callSetup+7,0,5);
+    callSetup[7] = 0x00;
+    callSetup[8] = 0x00;
+    callSetup[9] = 0x00;
+    callSetup[10] = 0x00;
+    callSetup[11] = 0x01;
+
     //call type
     callSetup[12] = 0x01;
     //init called Party BCD Number

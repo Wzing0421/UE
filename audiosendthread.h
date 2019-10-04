@@ -38,7 +38,7 @@ public:
     QIODevice *inputDevice;
     QAudioFormat format;
 
-    unsigned short SN = 0;//表示语音帧头的序列号
+    unsigned int SN = 0;//表示语音帧头的序列号,这是我和swh的第一次语音接口，总的头的长度是4字节，只有一个SN号
     struct video{
         int lens;
         char data[960];
@@ -50,6 +50,7 @@ public:
     void setaudioformat(int samplerate, int channelcount, int samplesize);
     void mystart();
     void mystop();
+    void init_sc2_2();//初始化sc2_2的头
 
 public slots:
     void onReadyRead();
