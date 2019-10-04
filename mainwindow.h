@@ -98,7 +98,7 @@ public:
     QTimer *calltimerT9014;
 
     /*呼叫状态的变量*/
-    unsigned char callSetup[21],sc2_callSetup[29];//注意最后BCD number是TLV
+    unsigned char callSetup[20],sc2_callSetup[28];//注意最后BCD number是TLV
     unsigned char callSetupAck[7],sc2_callSetupAck[15];
     unsigned char callAllerting[7],sc2_callAllerting[15];
     unsigned char callConnect[8],sc2_callConnect[16];

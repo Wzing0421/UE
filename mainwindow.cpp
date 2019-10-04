@@ -201,7 +201,7 @@ void MainWindow::recvRegInfo(){
                     ui->label->setVisible(true);
 
                     /*开启周期注册定时器，周期注册每隔3600s发送的是regMsg_au，这部分暂时还没完成*/
-                    periodtimer->start(periodtime);
+                    //periodtimer->start(periodtime);
 
 
                     break;
@@ -233,7 +233,61 @@ void MainWindow::recvRegInfo(){
             else if(registerstate == REGISTERED){//这说明是周期注册
 
                 if(regtimer->isActive()) regtimer->stop();
-                qDebug()<<"收到周期注册回复";
+                qDebug()<<"收到周期注册回应";
+            }
+            /*这里我加上了一个逻辑，就是去掉了鉴权注册中间的两个步骤，只有一次握手*/
+            else if(registerstate == UNREGISTERED){
+                QMessageBox box;
+                unsigned char cause = *(recvbuf+8);
+                switch (cause) {
+                case 0x00://注册成功
+
+                    ui->start->setText("注册成功");
+                    qDebug()<<"收到 register rsp,注册成功！";
+
+                    if(reg_auth_timer->isActive()) reg_auth_timer->stop();
+                    registerstate = REGISTERED;//标识注册成功
+                    callstate = U0;
+                    ui->start->setDisabled(true);
+                    ui->DeReigster->setDisabled(false);
+                    ui->call->setDisabled(false);
+                    ui->textEdit->setDisabled(false);
+
+                    ui->start->setVisible(false);
+                    ui->DeReigster->setVisible(true);
+                    ui->call->setVisible(true);
+                    ui->textEdit->setVisible(true);
+                    ui->label->setVisible(true);
+
+                    /*开启周期注册定时器，周期注册每隔3600s发送的是regMsg_au，这部分暂时还没完成*/
+                    //periodtimer->start(periodtime);
+
+
+                    break;
+                case 0x03://鉴权失败
+
+                    ReleaseRegResources();
+                    box.setText(tr("鉴权失败，请重新注册！"));
+                    box.exec();
+                    break;
+
+                case 0x08://用户不存在
+
+                    ReleaseRegResources();
+                    box.setText(tr("用户不存在，请重新注册！"));
+                    box.exec();
+                    break;
+
+                default:
+
+                    ReleaseRegResources();
+                    string str = "注册失败，错误码字是： ";
+                    str += to_string(int(cause));
+                    box.setText(QString::fromStdString(str));
+                    box.exec();
+                    break;
+                }
+
             }
 
         }
@@ -541,7 +595,7 @@ void MainWindow::init_sc2(){//这个函数不需要了
 void MainWindow::init_callSetup(){
 
     callSetup[0] = 0x00;//Protocol version
-    callSetup[1] = 0x15;//Message length == 21
+    callSetup[1] = 0x14;//Message length == 24
     callSetup[2] = 0x06;//Message type
     //call ID 4个字节填全F
     memset(callSetup+3, 255,4);
@@ -556,8 +610,8 @@ void MainWindow::init_callSetup(){
     //call type
     callSetup[12] = 0x01;
     //init called Party BCD Number
-    callSetup[13] = 0x03;// tag
-    callSetup[14] = 0x08;// length of called BCD number
+    callSetup[13] = 0x0b;// length of called BCD number
+
 
 
     /*
@@ -780,7 +834,7 @@ void MainWindow::on_call_clicked()//呼叫按钮
         unsigned char num2c = (num2<<4);
         nums[i] = nums[i] | num2c;
     }
-    memcpy(callSetup+15,nums,6);
+    memcpy(callSetup+14,nums,6);
 
     /*以下流程是主叫建立流程。我首先忽略掉被叫建立的过程，模拟的是全程顺利的过程，呼叫成功之后应该开启语音发送线程*/
     callstate = U1;
@@ -933,7 +987,7 @@ void MainWindow::ReleaseCallResources(){//释放呼叫资源
     audsend.mystop();
 
     //注意在业务完成之后要启动周期注册定时器
-    periodtimer->start(periodtime);
+    //periodtimer->start(periodtime);
 
 }
 
