@@ -68,7 +68,7 @@ void AudioPlayThread::run(void)
             // 写入音频数据
             m_AudioIo->write(writeData, FRAME_LEN_60ms);
             m_CurrentPlayIndex += FRAME_LEN_60ms;
-            qDebug()<<m_CurrentPlayIndex;
+            //qDebug()<<m_CurrentPlayIndex;
             delete []writeData;
 
             //如果长度超过了MAX_AUDIO_LEN就从
@@ -106,6 +106,7 @@ void AudioPlayThread::readyReadSlot(){
             QHostAddress senderip;
             quint16 senderport;
 
+            /*
             //注意这里把头的长度从2改成12了
             char recvbuf[FRAME_LEN_60ms+12];
             memset(recvbuf,0,sizeof(recvbuf));
@@ -113,7 +114,17 @@ void AudioPlayThread::readyReadSlot(){
             qDebug()<<num;
             //outputDevice->write(vp.data,vp.lens);
             addAudioBuffer(recvbuf+12, FRAME_LEN_60ms);
+            */
 
+            //注意这里把头的长度从2改成12了
+            char recvbuf[FRAME_LEN_60ms];
+            memset(recvbuf,0,sizeof(recvbuf));
+            int num = udpsocket->readDatagram(recvbuf,FRAME_LEN_60ms,&senderip,&senderport);
+            //qDebug()<<num;
+            //outputDevice->write(vp.data,vp.lens);
+            //for(int i = 0; i< FRAME_LEN_60ms; i++) printf("%d ",int(recvbuf[i]));
+            //printf("\n\n");
+            addAudioBuffer(recvbuf, FRAME_LEN_60ms);
     }
 }
 

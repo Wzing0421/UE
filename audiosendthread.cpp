@@ -42,10 +42,15 @@ void audiosendthread::setaudioformat(int samplerate, int channelcount, int sampl
 }
 
 void audiosendthread::mystart(){
-    if(!udpSocket -> bind(QHostAddress::Any, 10005)){ qDebug()<<"socket bind error";}
+    if(!udpSocket -> bind(QHostAddress::Any, 10005)){
+        qDebug()<<"socket bind error";
+    }
     connect(udpSocket,SIGNAL(readyRead()),this,SLOT(readyReadSlot()));
 
     SN = 0;
+    m_CurrentPlayIndex = 0;
+    m_PCMDataBuffer.clear();
+
     qDebug()<<"audio sender starts!";
     inputDevice = input->start();
     connect(inputDevice,SIGNAL(readyRead()),this,SLOT(onReadyRead()));
@@ -55,7 +60,12 @@ void audiosendthread::mystart(){
 
 void audiosendthread::mystop(){
     qDebug()<<"audio sender stops!";
+
+    QMutexLocker locker(&m_Mutex);
     SN = 0;
+    m_CurrentPlayIndex = 0;
+    m_PCMDataBuffer.clear();
+
     input->stop();
     udpSocket->close();
 
@@ -65,8 +75,25 @@ void audiosendthread::onReadyRead(){
     //这个函数的功能是实现第一次压缩到2.4k，因为本地硬件没有能力将其压缩只2.4k所以首先发送128k的语音包
     //首先我是在其头上面加序号的，序号等到之后发送真正的编码的时候再加上
     // read audio from input device
-    inputDevice -> read(au_data,FRAME_LEN_60ms);
-    char* audio = new char[FRAME_LEN_60ms];
+
+    /*现在的问题是发现每次读入的消息并不一定是960长度，所以需要增加一个缓冲区，每次收集到960了再发送*/
+    int len = inputDevice -> read(au_data,FRAME_LEN_60ms);
+
+    m_CurrentPlayIndex += len;
+    m_PCMDataBuffer.append(au_data, len);
+
+    if( m_CurrentPlayIndex >= FRAME_LEN_60ms){
+        char *writeData = new char[FRAME_LEN_60ms];
+        memcpy(writeData,&m_PCMDataBuffer.data()[0], FRAME_LEN_60ms);
+
+        Socket2_4 -> writeDatagram(writeData, FRAME_LEN_60ms, tmpaddr, mediaGW_port1);
+        m_PCMDataBuffer = m_PCMDataBuffer.right(m_PCMDataBuffer.size()-FRAME_LEN_60ms);
+        m_CurrentPlayIndex -= FRAME_LEN_60ms;
+        delete []writeData;
+    }
+
+
+    //char* audio = new char[FRAME_LEN_60ms];
 
     /*
     unsigned int SN_net = htonl(SN);
@@ -74,9 +101,13 @@ void audiosendthread::onReadyRead(){
     memcpy(audio+sizeof(unsigned int),au_data,FRAME_LEN_60ms);
     SN++;
     */
-    //发送到媒体网关的2.4k语音压缩端口，长度应该是962字节
-    Socket2_4 -> writeDatagram(audio, FRAME_LEN_60ms,tmpaddr,mediaGW_port1);
-    delete []audio;
+    //发送到媒体网关的2.4k语音压缩端口，长度应该是960字节
+    //short* au_short = (short*)&au_data;
+    //for(int i = 0; i< FRAME_LEN_60ms/2; i++) printf("%d ",au_short[i]);
+    //for(int i = 0; i< FRAME_LEN_60ms; i++) printf("%d ",(short)(au_data[i]));
+
+
+    //delete []audio;
 
 }
 
@@ -85,7 +116,7 @@ void audiosendthread::readyReadSlot(){//收到压缩的2.4k的语音包
             QHostAddress senderip;
             quint16 senderport;
 
-            char recvbuf[18];//2.4k语音包的长度是18字节
+            char recvbuf[FRANE_COMPRESS_60ms];//2.4k语音包的长度是18字节
             udpSocket->readDatagram(recvbuf,sizeof(recvbuf),&senderip,&senderport);
             //加上头再发送出去
             char* sendbuf = new char[FRANE_COMPRESS_60ms + sizeof(sc2_2)];//12字节的头，18字节的裸2.4k语音共30字节
@@ -93,11 +124,14 @@ void audiosendthread::readyReadSlot(){//收到压缩的2.4k的语音包
             /*处理三个字节长度的SN*/
 
             unsigned int SN_net = htonl(SN);
-            memcpy(sendbuf + 5,(&SN_net)+1,3);
+            memcpy(sendbuf + 5,((unsigned char*)&SN_net)+1,3);
 
             memcpy(sendbuf + sizeof(sc2_2), recvbuf, FRANE_COMPRESS_60ms);
             udpSocket->writeDatagram(sendbuf,FRANE_COMPRESS_60ms +sizeof(sc2_2), destaddr,mediaGW_port2);
+
+            QMutexLocker locker(&m_Mutex);
             SN++;
+
             delete []sendbuf;
     }
 }
